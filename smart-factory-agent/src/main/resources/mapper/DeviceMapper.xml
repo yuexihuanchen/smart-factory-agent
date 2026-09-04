@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.smartfactory.mapper.DeviceMapper">
+
+    <select id="findAll"
+            resultType="com.smartfactory.entity.Device">
+
+        SELECT
+            id,
+            device_code AS deviceCode,
+            device_name AS deviceName,
+            device_type AS deviceType,
+            ip_address AS ipAddress,
+            port,
+            protocol,
+            status,
+            description,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM device
+        ORDER BY id DESC
+
+    </select>
+
+
+    <select id="findById"
+            parameterType="long"
+            resultType="com.smartfactory.entity.Device">
+
+        SELECT
+            id,
+            device_code AS deviceCode,
+            device_name AS deviceName,
+            device_type AS deviceType,
+            ip_address AS ipAddress,
+            port,
+            protocol,
+            status,
+            description,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM device
+        WHERE id = #{id}
+
+    </select>
+
+
+    <insert id="insert"
+            parameterType="com.smartfactory.entity.Device"
+            useGeneratedKeys="true"
+            keyProperty="id">
+
+        INSERT INTO device
+        (
+            device_code,
+            device_name,
+            device_type,
+            ip_address,
+            port,
+            protocol,
+            status,
+            description
+        )
+        VALUES
+        (
+            #{deviceCode},
+            #{deviceName},
+            #{deviceType},
+            #{ipAddress},
+            #{port},
+            #{protocol},
+            #{status},
+            #{description}
+        )
+
+    </insert>
+
+
+    <update id="update"
+            parameterType="com.smartfactory.entity.Device">
+
+        UPDATE device
+        SET
+            device_name = #{deviceName},
+            device_type = #{deviceType},
+            ip_address = #{ipAddress},
+            port = #{port},
+            protocol = #{protocol},
+            status = #{status},
+            description = #{description}
+        WHERE id = #{id}
+
+    </update>
+
+
+    <delete id="deleteById"
+            parameterType="long">
+
+        DELETE FROM device
+        WHERE id = #{id}
+
+    </delete>
+
+</mapper>

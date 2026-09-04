@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: smart-factory-agent
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/smart_factory?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.smartfactory.entity
+
+server:
+  port: 8080
