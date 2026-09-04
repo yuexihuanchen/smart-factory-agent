@@ -72,24 +72,26 @@ public class DeviceController {
             summary = "创建设备",
             description = "新增一个工业设备"
     )
-    public Result<Device> create(
-            @Valid @RequestBody DeviceCreateRequest request) {
+   public Result<Device> create(
+                @Valid @RequestBody DeviceCreateRequest request) {
 
-        Device device = new Device();
+    Device device = new Device();
 
-        device.setDeviceCode(request.getDeviceCode());
-        device.setDeviceName(request.getDeviceName());
-        device.setDeviceType(request.getDeviceType());
-        device.setIpAddress(request.getIpAddress());
-        device.setPort(request.getPort());
-        device.setProtocol(request.getProtocol());
-        device.setStatus(request.getStatus());
-        device.setDescription(request.getDescription());
+    device.setDeviceCode(request.getDeviceCode());
+    device.setDeviceName(request.getDeviceName());
+    device.setDeviceType(request.getDeviceType());
+    device.setLocation(request.getLocation());
+    device.setIpAddress(request.getIpAddress());
+    device.setPort(request.getPort());
+    device.setProtocol(request.getProtocol());
+    device.setStatus(request.getStatus());
+    device.setDescription(request.getDescription());
+    
 
-        return Result.success(
-                deviceService.create(device)
-        );
-    }
+    return Result.success(
+            deviceService.create(device)
+    );
+}
 
     /**
      * 修改设备
@@ -116,6 +118,7 @@ public class DeviceController {
         device.setProtocol(request.getProtocol());
         device.setStatus(request.getStatus());
         device.setDescription(request.getDescription());
+        device.setLocation(request.getLocation());
 
         return Result.success(
                 deviceService.update(device)

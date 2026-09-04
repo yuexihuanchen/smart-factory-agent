@@ -29,4 +29,6 @@ public class DeviceCreateRequest {
     private String status;
 
     private String description;
+
+    private String location;
 }

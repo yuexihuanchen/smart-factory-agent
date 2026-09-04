@@ -6,49 +6,96 @@
 
 <mapper namespace="com.smartfactory.mapper.DeviceMapper">
 
+    <!-- 数据库字段 → Java属性 -->
+    <resultMap id="DeviceResultMap"
+               type="com.smartfactory.entity.Device">
+
+        <id property="id"
+            column="id"/>
+
+        <result property="deviceCode"
+                column="device_code"/>
+
+        <result property="deviceName"
+                column="device_name"/>
+
+        <result property="deviceType"
+                column="device_type"/>
+
+        <result property="location"
+                column="location"/>
+
+        <result property="ipAddress"
+                column="ip_address"/>
+
+        <result property="port"
+                column="port"/>
+
+        <result property="protocol"
+                column="protocol"/>
+
+        <result property="status"
+                column="status"/>
+
+        <result property="description"
+                column="description"/>
+
+        <result property="createdAt"
+                column="created_at"/>
+
+        <result property="updatedAt"
+                column="updated_at"/>
+
+    </resultMap>
+
+
+    <!-- 查询全部设备 -->
     <select id="findAll"
-            resultType="com.smartfactory.entity.Device">
+            resultMap="DeviceResultMap">
 
         SELECT
             id,
-            device_code AS deviceCode,
-            device_name AS deviceName,
-            device_type AS deviceType,
-            ip_address AS ipAddress,
+            device_code,
+            device_name,
+            device_type,
+            location,
+            ip_address,
             port,
             protocol,
             status,
             description,
-            created_at AS createdAt,
-            updated_at AS updatedAt
+            created_at,
+            updated_at
         FROM device
         ORDER BY id DESC
 
     </select>
 
 
+    <!-- 根据ID查询 -->
     <select id="findById"
-            parameterType="long"
-            resultType="com.smartfactory.entity.Device">
+            resultMap="DeviceResultMap">
 
         SELECT
             id,
-            device_code AS deviceCode,
-            device_name AS deviceName,
-            device_type AS deviceType,
-            ip_address AS ipAddress,
+            device_code,
+            device_name,
+            device_type,
+            location,
+            ip_address,
             port,
             protocol,
             status,
             description,
-            created_at AS createdAt,
-            updated_at AS updatedAt
+            created_at,
+            updated_at
         FROM device
         WHERE id = #{id}
 
     </select>
 
 
+    <!-- 新增设备 -->
     <insert id="insert"
             parameterType="com.smartfactory.entity.Device"
             useGeneratedKeys="true"
@@ -59,6 +106,7 @@
             device_code,
             device_name,
             device_type,
+            location,
             ip_address,
             port,
             protocol,
@@ -70,6 +118,7 @@
             #{deviceCode},
             #{deviceName},
             #{deviceType},
+            #{location},
             #{ipAddress},
             #{port},
             #{protocol},
@@ -80,25 +129,29 @@
     </insert>
 
 
+    <!-- 修改设备 -->
     <update id="update"
             parameterType="com.smartfactory.entity.Device">
 
         UPDATE device
+
         SET
             device_name = #{deviceName},
             device_type = #{deviceType},
+            location = #{location},
             ip_address = #{ipAddress},
             port = #{port},
             protocol = #{protocol},
             status = #{status},
             description = #{description}
+
         WHERE id = #{id}
 
     </update>
 
 
-    <delete id="deleteById"
-            parameterType="long">
+    <!-- 删除设备 -->
+    <delete id="deleteById">
 
         DELETE FROM device
         WHERE id = #{id}

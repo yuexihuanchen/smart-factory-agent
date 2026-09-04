@@ -25,4 +25,6 @@ public class DeviceUpdateRequest {
     private String status;
 
     private String description;
+
+    private String location;
 }

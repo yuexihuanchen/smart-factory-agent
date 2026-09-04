@@ -15,6 +15,8 @@ public class Device {
 
     private String deviceType;
 
+    private String location;
+
     private String ipAddress;
 
     private Integer port;
