@@ -37,3 +37,15 @@ $RECYCLE.BIN/
 *.pid
 *.seed
 *.pid.lock
+
+# === Spring Initializr / IDE generated files ===
+HELP.md
+.apt_generated
+.springBeans
+.sts4-cache
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+build/

@@ -28,6 +28,7 @@
 	</scm>
 	<properties>
 		<java.version>26</java.version>
+		<lombok.version>1.18.48</lombok.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -81,6 +82,12 @@
     		<artifactId>mysql-connector-j</artifactId>
     		<scope>runtime</scope>
 		</dependency>
+
+		<dependency>
+  			  <groupId>org.springdoc</groupId>
+   			 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+    		<version>3.1.0</version>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -90,40 +97,19 @@
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
 			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-compiler-plugin</artifactId>
-				<executions>
-					<execution>
-						<id>default-compile</id>
-						<phase>compile</phase>
-						<goals>
-							<goal>compile</goal>
-						</goals>
-						<configuration>
-							<annotationProcessorPaths>
-								<path>
-									<groupId>org.projectlombok</groupId>
-									<artifactId>lombok</artifactId>
-								</path>
-							</annotationProcessorPaths>
-						</configuration>
-					</execution>
-					<execution>
-						<id>default-testCompile</id>
-						<phase>test-compile</phase>
-						<goals>
-							<goal>testCompile</goal>
-						</goals>
-						<configuration>
-							<annotationProcessorPaths>
-								<path>
-									<groupId>org.projectlombok</groupId>
-									<artifactId>lombok</artifactId>
-								</path>
-							</annotationProcessorPaths>
-						</configuration>
-					</execution>
-				</executions>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<configuration>
+						<proc>full</proc>
+						<fork>true</fork>
+						<annotationProcessorPaths>
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+							<version>${lombok.version}</version>
+						</path>
+					</annotationProcessorPaths>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

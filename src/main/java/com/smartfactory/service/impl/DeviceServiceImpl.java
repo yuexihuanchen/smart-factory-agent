@@ -1,9 +1,12 @@
 package com.smartfactory.service.impl;
 
+import com.smartfactory.common.exception.BusinessException;
 import com.smartfactory.entity.Device;
 import com.smartfactory.mapper.DeviceMapper;
 import com.smartfactory.service.DeviceService;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -21,23 +24,52 @@ public class DeviceServiceImpl implements DeviceService {
 
     @Override
     public Device findById(Long id) {
-        return deviceMapper.findById(id);
+
+        Device device = deviceMapper.findById(id);
+
+        if (device == null) {
+            throw new BusinessException(
+                    40401,
+                    "设备不存在"
+            );
+        }
+
+        return device;
     }
 
     @Override
     public Device create(Device device) {
+
         deviceMapper.insert(device);
+
         return device;
     }
 
     @Override
     public Device update(Device device) {
-        deviceMapper.update(device);
+
+        int rows = deviceMapper.update(device);
+
+        if (rows == 0) {
+            throw new BusinessException(
+                    40401,
+                    "设备不存在"
+            );
+        }
+
         return device;
     }
 
     @Override
     public void deleteById(Long id) {
-        deviceMapper.deleteById(id);
+
+        int rows = deviceMapper.deleteById(id);
+
+        if (rows == 0) {
+            throw new BusinessException(
+                    40401,
+                    "设备不存在"
+            );
+        }
     }
 }
