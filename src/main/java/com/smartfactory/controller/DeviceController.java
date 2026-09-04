@@ -5,6 +5,8 @@ import com.smartfactory.dto.DeviceCreateRequest;
 import com.smartfactory.dto.DeviceUpdateRequest;
 import com.smartfactory.entity.Device;
 import com.smartfactory.service.DeviceService;
+import com.smartfactory.service.DeviceStatusService;
+import com.smartfactory.common.exception.BusinessException;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,8 +18,12 @@ import lombok.RequiredArgsConstructor;
 
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
+
+import com.smartfactory.service.DeviceStatusService;
+import io.swagger.v3.oas.annotations.Parameter;
 
 @RestController
 @RequestMapping("/api/devices")
@@ -30,6 +36,7 @@ import java.util.List;
 public class DeviceController {
 
     private final DeviceService deviceService;
+    private final DeviceStatusService deviceStatusService;
 
     /**
      * 查询设备列表
@@ -63,6 +70,24 @@ public class DeviceController {
                 deviceService.findById(id)
         );
     }
+
+
+    @GetMapping("/{id}/status")
+    @Operation(summary = "查询设备状态")
+    public Result<String> getStatus(
+        @Parameter(description = "设备ID", example = "1")
+        @PathVariable
+        @Positive
+        Long id) {
+
+    String status = deviceStatusService.getStatus(id);
+
+    if (status == null) {
+        throw new BusinessException(40401, "设备不存在");
+    }
+
+    return Result.success(status);
+}
 
     /**
      * 创建设备
@@ -142,4 +167,21 @@ public class DeviceController {
 
         return Result.success();
     }
+
+    @PutMapping("/{id}/status")
+@Operation(summary = "修改设备状态")
+public Result<Void> updateStatus(
+        @Parameter(description = "设备ID", example = "1")
+        @PathVariable
+        @Positive
+        Long id,
+
+        @RequestParam
+        String status) {
+
+    deviceStatusService.updateStatus(id, status);
+
+    return Result.success();
 }
+}
+
