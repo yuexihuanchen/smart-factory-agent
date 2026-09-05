@@ -12,6 +12,12 @@ spring:
     redis:
       host: localhost
       port: 6379
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: admin123
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.smartfactory.entity

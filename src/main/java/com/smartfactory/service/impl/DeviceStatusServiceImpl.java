@@ -8,6 +8,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.TimeUnit;
+import com.smartfactory.mq.DeviceStatusMessage;
+import com.smartfactory.mq.DeviceStatusProducer;
 
 @Service
 @RequiredArgsConstructor
@@ -17,6 +19,8 @@ public class DeviceStatusServiceImpl implements DeviceStatusService {
     private final DeviceMapper deviceMapper;
 
     private static final long CACHE_MINUTES = 5;
+
+    private final DeviceStatusProducer deviceStatusProducer;
 
     @Override
     public String getStatus(Long deviceId) {
@@ -75,5 +79,13 @@ public class DeviceStatusServiceImpl implements DeviceStatusService {
                 CACHE_MINUTES,
                 TimeUnit.MINUTES
         );
+
+        DeviceStatusMessage message = new DeviceStatusMessage(
+        deviceId,
+        device.getDeviceCode(),
+        status
+     );
+
+        deviceStatusProducer.send(message);
     }
 }
