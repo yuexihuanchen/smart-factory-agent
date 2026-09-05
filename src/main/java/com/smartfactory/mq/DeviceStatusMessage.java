@@ -13,5 +13,7 @@ public class DeviceStatusMessage {
 
     private String deviceCode;
 
-    private String status;
+    private String oldStatus;
+
+    private String newStatus;
 }

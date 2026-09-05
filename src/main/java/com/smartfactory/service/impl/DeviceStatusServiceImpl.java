@@ -67,6 +67,7 @@ public class DeviceStatusServiceImpl implements DeviceStatusService {
         }
 
         // 2. 修改 MySQL 中的状态
+        String oldStatus = device.getStatus();
         device.setStatus(status);
         deviceMapper.update(device);
 
@@ -83,6 +84,7 @@ public class DeviceStatusServiceImpl implements DeviceStatusService {
         DeviceStatusMessage message = new DeviceStatusMessage(
         deviceId,
         device.getDeviceCode(),
+        oldStatus,
         status
      );
 

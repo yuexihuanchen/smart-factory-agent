@@ -10,14 +10,18 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+    mongodb:
+      uri: ${MONGO_URI:mongodb://admin:admin123@localhost:27017/smart_factory?authSource=admin}
 
   rabbitmq:
-    host: localhost
-    port: 5672
-    username: admin
-    password: admin123
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:admin123}
+
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.smartfactory.entity
