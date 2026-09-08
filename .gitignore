@@ -49,3 +49,10 @@ dist/
 nbdist/
 .nb-gradle/
 build/
+
+# === 本地环境配置（不提交） ===
+config/application-local.yml
+.env
+.env.*
+!.env.example
+effective-pom.xml

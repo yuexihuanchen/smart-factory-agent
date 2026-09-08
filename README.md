@@ -4,7 +4,6 @@ Industrial intelligent operations and maintenance platform.
 
 ## Tech Stack
 
-- Java 26
 - Spring Boot
 - MyBatis
 - MySQL
@@ -25,20 +24,35 @@ Build an industrial intelligent operations and maintenance platform integrating 
 ## Development Status
 
 - [x] Project initialization
-- [ ] User management
-- [ ] Device management
-- [ ] MyBatis + MySQL
-- [ ] Spring Security + JWT
-- [ ] Redis
+- [x] User creation (database-driven RBAC basis)
+- [x] Device management
+- [x] MyBatis + MySQL
+- [x] Spring Security: form login + database RBAC
+- [x] RBAC HTTP black-box verification
+- [ ] Spring Security + JWT (next milestone)
+- [x] Redis
 - [ ] Modbus TCP
-- [ ] RabbitMQ
-- [ ] MongoDB
+- [x] RabbitMQ
+- [x] MongoDB
 - [ ] Elasticsearch
 - [ ] MinIO
 - [ ] Spring AI Agent
 - [ ] RAG
 - [ ] MCP
 - [ ] Spring Cloud
+
+## 本地运行
+
+复制 `config/application-local.example.yml` 为 `config/application-local.yml`，填入本机 MySQL / RabbitMQ / MongoDB / 初始管理员配置，然后使用 `local` profile 启动：
+
+```powershell
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+访问地址：
+
+- API 首页：http://localhost:8080/
+- Swagger：http://localhost:8080/swagger-ui.html
 
 ## 整体技术架构
                          用户 / 前端

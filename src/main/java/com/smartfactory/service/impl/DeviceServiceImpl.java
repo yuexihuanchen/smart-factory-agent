@@ -34,7 +34,7 @@ public class DeviceServiceImpl implements DeviceService {
     @Override
     public Device create(Device device) {
         deviceMapper.insert(device);
-        return device;
+        return deviceMapper.findById(device.getId());
     }
 
     @Override
@@ -45,7 +45,13 @@ public class DeviceServiceImpl implements DeviceService {
             throw new BusinessException(40401, "设备不存在");
         }
 
-        return device;
+        Device updated = deviceMapper.findById(device.getId());
+
+        if (updated == null) {
+            throw new BusinessException(40401, "设备不存在");
+        }
+
+        return updated;
     }
 
     @Override

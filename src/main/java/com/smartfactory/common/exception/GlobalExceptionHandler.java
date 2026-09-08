@@ -1,8 +1,11 @@
 package com.smartfactory.common.exception;
 
 import com.smartfactory.common.response.Result;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
@@ -19,6 +22,17 @@ public class GlobalExceptionHandler {
                 e.getCode(),
                 e.getMessage()
         );
+    }
+
+    /**
+     * 处理无权限访问
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public Result<Void> handleAccessDeniedException(
+            AccessDeniedException e) {
+
+        return Result.error(40300, "无权访问");
     }
 
     /**

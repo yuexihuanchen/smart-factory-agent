@@ -57,18 +57,20 @@
     </insert>
 
     <select id="findById"
-        parameterType="java.lang.Long"
-        resultType="com.smartfactory.entity.SysUser">
-    SELECT
-        id,
-        username,
-        password,
-        nickname,
-        status,
-        created_at,
-        updated_at
-    FROM sys_user
-    WHERE id = #{id}
-</select>
+            parameterType="java.lang.Long"
+            resultMap="SysUserResultMap">
+
+        SELECT
+            id,
+            username,
+            password,
+            nickname,
+            status,
+            created_at,
+            updated_at
+        FROM sys_user
+        WHERE id = #{id}
+
+    </select>
 
 </mapper>

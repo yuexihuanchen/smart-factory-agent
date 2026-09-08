@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/smart_factory}
+
+  rabbitmq:
+    username: ${RABBITMQ_USERNAME:}
+    password: ${RABBITMQ_PASSWORD:}
+
+smart-factory:
+  bootstrap:
+    admin:
+      username: ${SMART_FACTORY_ADMIN_USERNAME:admin}
+      password: ${SMART_FACTORY_ADMIN_PASSWORD:}
+      nickname: ${SMART_FACTORY_ADMIN_NICKNAME:系统管理员}
