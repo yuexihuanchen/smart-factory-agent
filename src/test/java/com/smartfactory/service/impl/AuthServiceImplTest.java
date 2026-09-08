@@ -1,6 +1,7 @@
 package com.smartfactory.service.impl;
 
 import com.smartfactory.dto.LoginRequest;
+import com.smartfactory.security.JwtTokenBlacklistService;
 import com.smartfactory.security.JwtTokenService;
 import com.smartfactory.vo.LoginResponse;
 import org.junit.jupiter.api.Test;
@@ -27,13 +28,18 @@ class AuthServiceImplTest {
 
         UserDetailsService userDetailsService =
                 mock(UserDetailsService.class);
-        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
-        JwtTokenService jwtTokenService = mock(JwtTokenService.class);
+        PasswordEncoder passwordEncoder =
+                mock(PasswordEncoder.class);
+        JwtTokenService jwtTokenService =
+                mock(JwtTokenService.class);
+        JwtTokenBlacklistService jwtTokenBlacklistService =
+                mock(JwtTokenBlacklistService.class);
 
         AuthServiceImpl service = new AuthServiceImpl(
                 userDetailsService,
                 passwordEncoder,
-                jwtTokenService
+                jwtTokenService,
+                jwtTokenBlacklistService
         );
 
         LoginRequest request = new LoginRequest();
@@ -57,10 +63,14 @@ class AuthServiceImplTest {
 
         LoginResponse response = service.login(request);
 
-        assertThat(response.getToken()).isEqualTo("jwt-token");
-        assertThat(response.getTokenType()).isEqualTo("Bearer");
-        assertThat(response.getUsername()).isEqualTo("admin");
-        assertThat(response.getExpiresInSeconds()).isEqualTo(7200L);
+        assertThat(response.getToken())
+                .isEqualTo("jwt-token");
+        assertThat(response.getTokenType())
+                .isEqualTo("Bearer");
+        assertThat(response.getUsername())
+                .isEqualTo("admin");
+        assertThat(response.getExpiresInSeconds())
+                .isEqualTo(7200L);
         assertThat(response.getAuthorities())
                 .containsExactly("user:create");
     }
@@ -70,13 +80,18 @@ class AuthServiceImplTest {
 
         UserDetailsService userDetailsService =
                 mock(UserDetailsService.class);
-        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
-        JwtTokenService jwtTokenService = mock(JwtTokenService.class);
+        PasswordEncoder passwordEncoder =
+                mock(PasswordEncoder.class);
+        JwtTokenService jwtTokenService =
+                mock(JwtTokenService.class);
+        JwtTokenBlacklistService jwtTokenBlacklistService =
+                mock(JwtTokenBlacklistService.class);
 
         AuthServiceImpl service = new AuthServiceImpl(
                 userDetailsService,
                 passwordEncoder,
-                jwtTokenService
+                jwtTokenService,
+                jwtTokenBlacklistService
         );
 
         LoginRequest request = new LoginRequest();
@@ -97,6 +112,7 @@ class AuthServiceImplTest {
         assertThatThrownBy(() -> service.login(request))
                 .isInstanceOf(BadCredentialsException.class);
 
-        verify(jwtTokenService, never()).generateToken(user);
+        verify(jwtTokenService, never())
+                .generateToken(user);
     }
 }

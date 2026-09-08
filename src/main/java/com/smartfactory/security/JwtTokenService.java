@@ -58,6 +58,25 @@ public class JwtTokenService {
         }
     }
 
+    /**
+     * 获取当前 JWT 剩余有效时间。
+     *
+     * @param token JWT Token
+     * @return 剩余有效时间，单位：秒
+     */
+    public long getRemainingExpirationSeconds(String token) {
+
+        Date expiration = parseClaims(token).getExpiration();
+
+        long remainingMillis =
+                expiration.getTime() - System.currentTimeMillis();
+
+        return Math.max(
+                0,
+                remainingMillis / 1000
+        );
+    }
+
     public long getExpirationSeconds() {
         return expirationSeconds;
     }

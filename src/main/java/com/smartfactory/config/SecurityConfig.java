@@ -1,6 +1,7 @@
 package com.smartfactory.config;
 
 import com.smartfactory.security.JwtAuthenticationFilter;
+import com.smartfactory.security.JwtTokenBlacklistService;
 import com.smartfactory.security.JwtTokenService;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,10 +51,12 @@ public class SecurityConfig {
     public JwtAuthenticationFilter jwtAuthenticationFilter(
             JwtTokenService jwtTokenService,
             org.springframework.security.core.userdetails.UserDetailsService
-                    userDetailsService) {
+                    userDetailsService,
+            JwtTokenBlacklistService jwtTokenBlacklistService) {
         return new JwtAuthenticationFilter(
                 jwtTokenService,
-                userDetailsService
+                userDetailsService,
+                jwtTokenBlacklistService
         );
     }
 

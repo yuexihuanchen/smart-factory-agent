@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -34,5 +35,20 @@ public class AuthController {
         return Result.success(
                 authService.login(request)
         );
+    }
+
+    @PostMapping("/logout")
+    @Operation(
+            summary = "退出登录",
+            description = "将当前 JWT 加入 Redis 黑名单，使令牌立即失效"
+    )
+    public Result<Void> logout(
+            @RequestHeader("Authorization") String authorization) {
+
+        String token = authorization.substring(7);
+
+        authService.logout(token);
+
+        return Result.success(null);
     }
 }

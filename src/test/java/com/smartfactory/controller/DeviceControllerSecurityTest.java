@@ -20,6 +20,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 
+import com.smartfactory.security.JwtTokenBlacklistService;
+
 import java.util.List;
 
 import static org.mockito.Mockito.when;
@@ -47,6 +49,9 @@ class DeviceControllerSecurityTest {
 
     @MockitoBean
     private UserDetailsService userDetailsService;
+
+    @MockitoBean
+    private JwtTokenBlacklistService jwtTokenBlacklistService;
 
     @Configuration
     @Import({SecurityConfig.class, GlobalExceptionHandler.class, DeviceController.class})

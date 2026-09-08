@@ -22,11 +22,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final UserDetailsService userDetailsService;
 
+    private final JwtTokenBlacklistService jwtTokenBlacklistService;
+
     public JwtAuthenticationFilter(
             JwtTokenService jwtTokenService,
-            UserDetailsService userDetailsService) {
+            UserDetailsService userDetailsService,
+            JwtTokenBlacklistService jwtTokenBlacklistService) {
         this.jwtTokenService = jwtTokenService;
         this.userDetailsService = userDetailsService;
+        this.jwtTokenBlacklistService = jwtTokenBlacklistService;
     }
 
     @Override
@@ -41,6 +45,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             try {
                 String token = authorization.substring(7);
+
+                if (jwtTokenBlacklistService.isBlacklisted(token)) {
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
                 String username = jwtTokenService.extractUsername(token);
 
                 if (username != null

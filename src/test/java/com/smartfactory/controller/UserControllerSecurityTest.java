@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.smartfactory.security.JwtTokenBlacklistService;
 
 @WebMvcTest(UserController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -43,6 +44,9 @@ class UserControllerSecurityTest {
 
     @MockitoBean
     private UserDetailsService userDetailsService;
+
+    @MockitoBean
+    private JwtTokenBlacklistService jwtTokenBlacklistService;
 
     @Configuration
     @Import({SecurityConfig.class, GlobalExceptionHandler.class, UserController.class})

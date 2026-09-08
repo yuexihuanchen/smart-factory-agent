@@ -1,6 +1,7 @@
 package com.smartfactory.service.impl;
 
 import com.smartfactory.dto.LoginRequest;
+import com.smartfactory.security.JwtTokenBlacklistService;
 import com.smartfactory.security.JwtTokenService;
 import com.smartfactory.service.AuthService;
 import com.smartfactory.vo.LoginResponse;
@@ -21,6 +22,8 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
 
     private final JwtTokenService jwtTokenService;
+
+    private final JwtTokenBlacklistService jwtTokenBlacklistService;
 
     @Override
     public LoginResponse login(LoginRequest request) {
@@ -63,5 +66,17 @@ public class AuthServiceImpl implements AuthService {
         );
 
         return response;
+    }
+
+    @Override
+    public void logout(String token) {
+
+        long remainingSeconds =
+                jwtTokenService.getRemainingExpirationSeconds(token);
+
+        jwtTokenBlacklistService.blacklist(
+                token,
+                remainingSeconds
+        );
     }
 }
