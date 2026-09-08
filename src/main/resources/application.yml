@@ -14,13 +14,13 @@ spring:
       port: ${REDIS_PORT:6379}
 
     mongodb:
-      uri: ${MONGO_URI:mongodb://admin:admin123@localhost:27017/smart_factory?authSource=admin}
+      uri: ${MONGO_URI}
 
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:admin}
-    password: ${RABBITMQ_PASSWORD:admin123}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
@@ -28,3 +28,11 @@ mybatis:
 
 server:
   port: 8080
+
+# SmartFactory-Agent 初始化管理员配置
+smart-factory:
+  bootstrap:
+    admin:
+      username: ${SMART_FACTORY_ADMIN_USERNAME:admin}
+      password: ${SMART_FACTORY_ADMIN_PASSWORD}
+      nickname: ${SMART_FACTORY_ADMIN_NICKNAME:系统管理员}

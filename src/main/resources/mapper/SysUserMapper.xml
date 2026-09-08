@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.smartfactory.mapper.SysUserMapper">
+
+    <resultMap id="SysUserResultMap"
+               type="com.smartfactory.entity.SysUser">
+
+        <id property="id" column="id"/>
+        <result property="username" column="username"/>
+        <result property="password" column="password"/>
+        <result property="nickname" column="nickname"/>
+        <result property="status" column="status"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+
+    </resultMap>
+
+    <select id="findByUsername"
+            resultMap="SysUserResultMap">
+
+        SELECT
+            id,
+            username,
+            password,
+            nickname,
+            status,
+            created_at,
+            updated_at
+        FROM sys_user
+        WHERE username = #{username}
+        LIMIT 1
+
+    </select>
+
+    <insert id="insert"
+            parameterType="com.smartfactory.entity.SysUser"
+            useGeneratedKeys="true"
+            keyProperty="id">
+
+        INSERT INTO sys_user (
+            username,
+            password,
+            nickname,
+            status
+        )
+        VALUES (
+            #{username},
+            #{password},
+            #{nickname},
+            #{status}
+        )
+
+    </insert>
+
+    <select id="findById"
+        parameterType="java.lang.Long"
+        resultType="com.smartfactory.entity.SysUser">
+    SELECT
+        id,
+        username,
+        password,
+        nickname,
+        status,
+        created_at,
+        updated_at
+    FROM sys_user
+    WHERE id = #{id}
+</select>
+
+</mapper>

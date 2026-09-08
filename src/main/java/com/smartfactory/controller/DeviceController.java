@@ -1,14 +1,15 @@
 package com.smartfactory.controller;
 
+import com.smartfactory.common.exception.BusinessException;
 import com.smartfactory.common.response.Result;
 import com.smartfactory.dto.DeviceCreateRequest;
 import com.smartfactory.dto.DeviceUpdateRequest;
 import com.smartfactory.entity.Device;
 import com.smartfactory.service.DeviceService;
 import com.smartfactory.service.DeviceStatusService;
-import com.smartfactory.common.exception.BusinessException;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.validation.Valid;
@@ -16,14 +17,11 @@ import jakarta.validation.constraints.Positive;
 
 import lombok.RequiredArgsConstructor;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
-
-import com.smartfactory.service.DeviceStatusService;
-import io.swagger.v3.oas.annotations.Parameter;
 
 @RestController
 @RequestMapping("/api/devices")
@@ -36,11 +34,13 @@ import io.swagger.v3.oas.annotations.Parameter;
 public class DeviceController {
 
     private final DeviceService deviceService;
+
     private final DeviceStatusService deviceStatusService;
 
     /**
      * 查询设备列表
      */
+    @PreAuthorize("hasAuthority('device:read')")
     @GetMapping
     @Operation(
             summary = "查询设备列表",
@@ -56,6 +56,7 @@ public class DeviceController {
     /**
      * 查询设备详情
      */
+    @PreAuthorize("hasAuthority('device:read')")
     @GetMapping("/{id}")
     @Operation(
             summary = "查询设备详情",
@@ -71,56 +72,71 @@ public class DeviceController {
         );
     }
 
-
+    /**
+     * 查询设备当前状态
+     */
+    @PreAuthorize("hasAuthority('device:read')")
     @GetMapping("/{id}/status")
-    @Operation(summary = "查询设备状态")
+    @Operation(
+            summary = "查询设备状态",
+            description = "根据设备ID查询当前设备状态"
+    )
     public Result<String> getStatus(
-        @Parameter(description = "设备ID", example = "1")
-        @PathVariable
-        @Positive
-        Long id) {
+            @Parameter(
+                    description = "设备ID",
+                    example = "1"
+            )
+            @PathVariable
+            @Positive(message = "设备ID必须大于0")
+            Long id) {
 
-    String status = deviceStatusService.getStatus(id);
+        String status = deviceStatusService.getStatus(id);
 
-    if (status == null) {
-        throw new BusinessException(40401, "设备不存在");
+        if (status == null) {
+            throw new BusinessException(
+                    40401,
+                    "设备不存在"
+            );
+        }
+
+        return Result.success(status);
     }
-
-    return Result.success(status);
-}
 
     /**
      * 创建设备
      */
+    @PreAuthorize("hasAuthority('device:create')")
     @PostMapping
     @Operation(
             summary = "创建设备",
             description = "新增一个工业设备"
     )
-   public Result<Device> create(
-                @Valid @RequestBody DeviceCreateRequest request) {
+    public Result<Device> create(
+            @Valid
+            @RequestBody
+            DeviceCreateRequest request) {
 
-    Device device = new Device();
+        Device device = new Device();
 
-    device.setDeviceCode(request.getDeviceCode());
-    device.setDeviceName(request.getDeviceName());
-    device.setDeviceType(request.getDeviceType());
-    device.setLocation(request.getLocation());
-    device.setIpAddress(request.getIpAddress());
-    device.setPort(request.getPort());
-    device.setProtocol(request.getProtocol());
-    device.setStatus(request.getStatus());
-    device.setDescription(request.getDescription());
-    
+        device.setDeviceCode(request.getDeviceCode());
+        device.setDeviceName(request.getDeviceName());
+        device.setDeviceType(request.getDeviceType());
+        device.setLocation(request.getLocation());
+        device.setIpAddress(request.getIpAddress());
+        device.setPort(request.getPort());
+        device.setProtocol(request.getProtocol());
+        device.setStatus(request.getStatus());
+        device.setDescription(request.getDescription());
 
-    return Result.success(
-            deviceService.create(device)
-    );
-}
+        return Result.success(
+                deviceService.create(device)
+        );
+    }
 
     /**
      * 修改设备
      */
+    @PreAuthorize("hasAuthority('device:update')")
     @PutMapping("/{id}")
     @Operation(
             summary = "修改设备",
@@ -131,7 +147,9 @@ public class DeviceController {
             @Positive(message = "设备ID必须大于0")
             Long id,
 
-            @Valid @RequestBody DeviceUpdateRequest request) {
+            @Valid
+            @RequestBody
+            DeviceUpdateRequest request) {
 
         Device device = new Device();
 
@@ -153,6 +171,7 @@ public class DeviceController {
     /**
      * 删除设备
      */
+    @PreAuthorize("hasAuthority('device:delete')")
     @DeleteMapping("/{id}")
     @Operation(
             summary = "删除设备",
@@ -168,20 +187,32 @@ public class DeviceController {
         return Result.success();
     }
 
+    /**
+     * 修改设备状态
+     */
+    @PreAuthorize("hasAuthority('device:update')")
     @PutMapping("/{id}/status")
-@Operation(summary = "修改设备状态")
-public Result<Void> updateStatus(
-        @Parameter(description = "设备ID", example = "1")
-        @PathVariable
-        @Positive
-        Long id,
+    @Operation(
+            summary = "修改设备状态",
+            description = "修改指定设备的运行状态"
+    )
+    public Result<Void> updateStatus(
+            @Parameter(
+                    description = "设备ID",
+                    example = "1"
+            )
+            @PathVariable
+            @Positive(message = "设备ID必须大于0")
+            Long id,
 
-        @RequestParam
-        String status) {
+            @RequestParam
+            String status) {
 
-    deviceStatusService.updateStatus(id, status);
+        deviceStatusService.updateStatus(
+                id,
+                status
+        );
 
-    return Result.success();
+        return Result.success();
+    }
 }
-}
-
