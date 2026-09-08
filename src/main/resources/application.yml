@@ -38,3 +38,7 @@ smart-factory:
       username: ${SMART_FACTORY_ADMIN_USERNAME:admin}
       password: ${SMART_FACTORY_ADMIN_PASSWORD}
       nickname: ${SMART_FACTORY_ADMIN_NICKNAME:系统管理员}
+
+  jwt:
+    secret: ${SMART_FACTORY_JWT_SECRET}
+    expiration-seconds: ${SMART_FACTORY_JWT_EXPIRATION_SECONDS:7200}

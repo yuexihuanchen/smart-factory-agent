@@ -11,8 +11,10 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomizer;
@@ -28,6 +30,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(DeviceController.class)
 @AutoConfigureMockMvc(addFilters = false)
+@TestPropertySource(properties = {
+        "smart-factory.jwt.secret=test-secret-0123456789abcdef-0123456789abcdef",
+        "smart-factory.jwt.expiration-seconds=7200"
+})
 class DeviceControllerSecurityTest {
 
     @Autowired
@@ -38,6 +44,9 @@ class DeviceControllerSecurityTest {
 
     @MockitoBean
     private DeviceStatusService deviceStatusService;
+
+    @MockitoBean
+    private UserDetailsService userDetailsService;
 
     @Configuration
     @Import({SecurityConfig.class, GlobalExceptionHandler.class, DeviceController.class})

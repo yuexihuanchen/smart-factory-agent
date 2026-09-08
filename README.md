@@ -27,9 +27,9 @@ Build an industrial intelligent operations and maintenance platform integrating 
 - [x] User creation (database-driven RBAC basis)
 - [x] Device management
 - [x] MyBatis + MySQL
-- [x] Spring Security: form login + database RBAC
+- [x] Spring Security: JWT + database RBAC
 - [x] RBAC HTTP black-box verification
-- [ ] Spring Security + JWT (next milestone)
+- [x] Spring Security + JWT
 - [x] Redis
 - [ ] Modbus TCP
 - [x] RabbitMQ

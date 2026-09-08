@@ -1,14 +1,23 @@
 package com.smartfactory.config;
 
+import com.smartfactory.security.JwtAuthenticationFilter;
+import com.smartfactory.security.JwtTokenService;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 @Configuration
 @EnableWebSecurity
@@ -23,42 +32,102 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    @Bean
+    public JwtProperties jwtProperties(
+            @Value("${smart-factory.jwt.secret}") String secret,
+            @Value("${smart-factory.jwt.expiration-seconds:7200}")
+            long expirationSeconds) {
+        return new JwtProperties(secret, expirationSeconds);
+    }
+
+    @Bean
+    public JwtTokenService jwtTokenService(
+            JwtProperties jwtProperties) {
+        return new JwtTokenService(jwtProperties);
+    }
+
+    @Bean
+    public JwtAuthenticationFilter jwtAuthenticationFilter(
+            JwtTokenService jwtTokenService,
+            org.springframework.security.core.userdetails.UserDetailsService
+                    userDetailsService) {
+        return new JwtAuthenticationFilter(
+                jwtTokenService,
+                userDetailsService
+        );
+    }
+
     /**
      * Spring Security 安全规则
      */
     @Bean
     public SecurityFilterChain securityFilterChain(
-            HttpSecurity http) throws Exception {
+            HttpSecurity http,
+            JwtAuthenticationFilter jwtAuthenticationFilter)
+            throws Exception {
 
         http
-                // 当前项目暂时关闭 CSRF
                 .csrf(csrf -> csrf.disable())
-
-                // 请求权限控制
+                .httpBasic(basic -> basic.disable())
+                .formLogin(login -> login.disable())
+                .logout(logout -> logout.disable())
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(
+                                SessionCreationPolicy.STATELESS
+                        )
+                )
                 .authorizeHttpRequests(auth -> auth
-
-                        // Swagger 放行
                         .requestMatchers(
+                                "/api/auth/login",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**"
                         ).permitAll()
-
-                        // 其他接口必须登录
                         .anyRequest().authenticated()
                 )
-
-                // 用户名 + 密码登录
-                .formLogin(form -> form
-                        .permitAll()
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint(
+                                (request, response, authException) ->
+                                        writeSecurityError(
+                                                response,
+                                                HttpServletResponse
+                                                        .SC_UNAUTHORIZED,
+                                                40100,
+                                                "未登录或登录已过期"
+                                        )
+                        )
+                        .accessDeniedHandler(
+                                (request, response, accessDeniedException) ->
+                                        writeSecurityError(
+                                                response,
+                                                HttpServletResponse
+                                                        .SC_FORBIDDEN,
+                                                40300,
+                                                "无权访问"
+                                        )
+                        )
                 )
-
-                // 登出
-                .logout(logout -> logout
-                        .logoutSuccessUrl("/login?logout")
-                        .permitAll()
+                .addFilterBefore(
+                        jwtAuthenticationFilter,
+                        UsernamePasswordAuthenticationFilter.class
                 );
 
         return http.build();
+    }
+
+    private void writeSecurityError(
+            HttpServletResponse response,
+            int status,
+            int code,
+            String message) throws IOException {
+
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write(
+                "{\"code\":" + code
+                        + ",\"message\":\"" + message
+                        + "\",\"data\":null}"
+        );
     }
 }

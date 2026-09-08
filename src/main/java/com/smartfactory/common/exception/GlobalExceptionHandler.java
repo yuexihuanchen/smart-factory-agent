@@ -3,6 +3,7 @@ package com.smartfactory.common.exception;
 import com.smartfactory.common.response.Result;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -33,6 +34,21 @@ public class GlobalExceptionHandler {
             AccessDeniedException e) {
 
         return Result.error(40300, "无权访问");
+    }
+
+    /**
+     * 处理认证失败
+     */
+    @ExceptionHandler(AuthenticationException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public Result<Void> handleAuthenticationException(
+            AuthenticationException e) {
+
+        String message = e.getMessage() == null
+                ? "认证失败"
+                : e.getMessage();
+
+        return Result.error(40100, message);
     }
 
     /**
