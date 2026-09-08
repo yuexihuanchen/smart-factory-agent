@@ -47,4 +47,87 @@
 
     </select>
 
+    <select id="findPermissionsByRoleId"
+            resultMap="SysPermissionResultMap">
+
+        SELECT
+            p.id,
+            p.permission_name,
+            p.permission_code,
+            p.description,
+            p.created_at,
+            p.updated_at
+        FROM sys_permission p
+        JOIN sys_role_permission rp
+            ON p.id = rp.permission_id
+        WHERE rp.role_id = #{roleId}
+        ORDER BY p.id
+
+    </select>
+
+    <select id="findAll"
+            resultMap="SysPermissionResultMap">
+
+        SELECT
+            id,
+            permission_name,
+            permission_code,
+            description,
+            created_at,
+            updated_at
+        FROM sys_permission
+        ORDER BY id
+
+    </select>
+
+    <select id="findById"
+            parameterType="java.lang.Long"
+            resultMap="SysPermissionResultMap">
+
+        SELECT
+            id,
+            permission_name,
+            permission_code,
+            description,
+            created_at,
+            updated_at
+        FROM sys_permission
+        WHERE id = #{id}
+
+    </select>
+
+    <select id="findByCode"
+            resultMap="SysPermissionResultMap">
+
+        SELECT
+            id,
+            permission_name,
+            permission_code,
+            description,
+            created_at,
+            updated_at
+        FROM sys_permission
+        WHERE permission_code = #{permissionCode}
+        LIMIT 1
+
+    </select>
+
+    <insert id="insert"
+            parameterType="com.smartfactory.entity.SysPermission"
+            useGeneratedKeys="true"
+            keyProperty="id">
+
+        INSERT INTO sys_permission (
+            permission_name,
+            permission_code,
+            description
+        )
+        VALUES (
+            #{permissionName},
+            #{permissionCode},
+            #{description}
+        )
+
+    </insert>
+
 </mapper>

@@ -45,4 +45,91 @@
 
     </select>
 
+    <select id="findAll"
+            resultMap="SysRoleResultMap">
+
+        SELECT
+            id,
+            role_name,
+            role_code,
+            description,
+            created_at,
+            updated_at
+        FROM sys_role
+        ORDER BY id
+
+    </select>
+
+    <select id="findById"
+            parameterType="java.lang.Long"
+            resultMap="SysRoleResultMap">
+
+        SELECT
+            id,
+            role_name,
+            role_code,
+            description,
+            created_at,
+            updated_at
+        FROM sys_role
+        WHERE id = #{id}
+
+    </select>
+
+    <select id="findByCode"
+            resultMap="SysRoleResultMap">
+
+        SELECT
+            id,
+            role_name,
+            role_code,
+            description,
+            created_at,
+            updated_at
+        FROM sys_role
+        WHERE role_code = #{roleCode}
+        LIMIT 1
+
+    </select>
+
+    <insert id="insert"
+            parameterType="com.smartfactory.entity.SysRole"
+            useGeneratedKeys="true"
+            keyProperty="id">
+
+        INSERT INTO sys_role (
+            role_name,
+            role_code,
+            description
+        )
+        VALUES (
+            #{roleName},
+            #{roleCode},
+            #{description}
+        )
+
+    </insert>
+
+    <update id="update"
+            parameterType="com.smartfactory.entity.SysRole">
+
+        UPDATE sys_role
+        <set>
+            role_name = #{roleName},
+            role_code = #{roleCode},
+            <if test="description != null">
+                description = #{description},
+            </if>
+        </set>
+        WHERE id = #{id}
+
+    </update>
+
+    <delete id="deleteById">
+
+        DELETE FROM sys_role
+        WHERE id = #{id}
+
+    </delete>
+
 </mapper>

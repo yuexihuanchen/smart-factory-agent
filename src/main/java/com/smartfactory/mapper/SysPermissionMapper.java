@@ -9,4 +9,14 @@ import java.util.List;
 public interface SysPermissionMapper {
 
     List<SysPermission> findPermissionsByUserId(Long userId);
+
+    List<SysPermission> findAll();
+
+    List<SysPermission> findPermissionsByRoleId(Long roleId);
+
+    SysPermission findById(Long id);
+
+    SysPermission findByCode(String permissionCode);
+
+    int insert(SysPermission permission);
 }

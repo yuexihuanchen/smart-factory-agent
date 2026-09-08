@@ -24,7 +24,7 @@ Build an industrial intelligent operations and maintenance platform integrating 
 ## Development Status
 
 - [x] Project initialization
-- [x] User creation (database-driven RBAC basis)
+- [x] User / Role / Permission management
 - [x] Device management
 - [x] MyBatis + MySQL
 - [x] Spring Security: JWT + database RBAC

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.smartfactory.mapper.SysUserRoleMapper">
+
+    <select id="findRoleIdsByUserId"
+            resultType="java.lang.Long">
+
+        SELECT role_id
+        FROM sys_user_role
+        WHERE user_id = #{userId}
+        ORDER BY role_id
+
+    </select>
+
+    <insert id="insertIgnore">
+
+        INSERT IGNORE INTO sys_user_role (
+            user_id,
+            role_id
+        )
+        VALUES (
+            #{userId},
+            #{roleId}
+        )
+
+    </insert>
+
+    <delete id="deleteByUserId">
+
+        DELETE FROM sys_user_role
+        WHERE user_id = #{userId}
+
+    </delete>
+
+    <select id="countUsersByRoleId"
+            resultType="long">
+
+        SELECT COUNT(*)
+        FROM sys_user_role
+        WHERE role_id = #{roleId}
+
+    </select>
+
+</mapper>

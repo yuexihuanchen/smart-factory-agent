@@ -2,14 +2,19 @@ package com.smartfactory.service.impl;
 
 import com.smartfactory.common.exception.BusinessException;
 import com.smartfactory.dto.UserCreateRequest;
+import com.smartfactory.entity.SysRole;
 import com.smartfactory.entity.SysUser;
+import com.smartfactory.mapper.SysPermissionMapper;
+import com.smartfactory.mapper.SysRoleMapper;
 import com.smartfactory.mapper.SysUserMapper;
+import com.smartfactory.mapper.SysUserRoleMapper;
 import com.smartfactory.vo.UserVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -26,8 +31,19 @@ class UserServiceImplTest {
     void createEncodesPasswordAndReturnsRefetchedTimestamps() {
 
         SysUserMapper mapper = mock(SysUserMapper.class);
+        SysRoleMapper roleMapper = mock(SysRoleMapper.class);
+        SysPermissionMapper permissionMapper =
+                mock(SysPermissionMapper.class);
+        SysUserRoleMapper userRoleMapper =
+                mock(SysUserRoleMapper.class);
         PasswordEncoder encoder = mock(PasswordEncoder.class);
-        UserServiceImpl service = new UserServiceImpl(mapper, encoder);
+        UserServiceImpl service = new UserServiceImpl(
+                mapper,
+                roleMapper,
+                permissionMapper,
+                userRoleMapper,
+                encoder
+        );
 
         UserCreateRequest request = new UserCreateRequest();
         request.setUsername("alice");
@@ -36,6 +52,9 @@ class UserServiceImplTest {
 
         when(mapper.findByUsername("alice")).thenReturn(null);
         when(encoder.encode("secret1")).thenReturn("encoded-hash");
+        when(roleMapper.findRolesByUserId(7L)).thenReturn(List.of());
+        when(permissionMapper.findPermissionsByUserId(7L))
+                .thenReturn(List.of());
 
         SysUser inserted = new SysUser();
         inserted.setId(7L);
@@ -69,8 +88,19 @@ class UserServiceImplTest {
     void createRejectsDuplicateUsernameBeforeEncoding() {
 
         SysUserMapper mapper = mock(SysUserMapper.class);
+        SysRoleMapper roleMapper = mock(SysRoleMapper.class);
+        SysPermissionMapper permissionMapper =
+                mock(SysPermissionMapper.class);
+        SysUserRoleMapper userRoleMapper =
+                mock(SysUserRoleMapper.class);
         PasswordEncoder encoder = mock(PasswordEncoder.class);
-        UserServiceImpl service = new UserServiceImpl(mapper, encoder);
+        UserServiceImpl service = new UserServiceImpl(
+                mapper,
+                roleMapper,
+                permissionMapper,
+                userRoleMapper,
+                encoder
+        );
 
         UserCreateRequest request = new UserCreateRequest();
         request.setUsername("maintenance");
@@ -87,5 +117,46 @@ class UserServiceImplTest {
 
         verify(mapper, never()).insert(any(SysUser.class));
         verify(encoder, never()).encode(any());
+    }
+
+    @Test
+    void assignRolesReplacesExistingUserRoles() {
+
+        SysUserMapper mapper = mock(SysUserMapper.class);
+        SysRoleMapper roleMapper = mock(SysRoleMapper.class);
+        SysPermissionMapper permissionMapper =
+                mock(SysPermissionMapper.class);
+        SysUserRoleMapper userRoleMapper =
+                mock(SysUserRoleMapper.class);
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        UserServiceImpl service = new UserServiceImpl(
+                mapper,
+                roleMapper,
+                permissionMapper,
+                userRoleMapper,
+                encoder
+        );
+
+        SysUser user = new SysUser();
+        user.setId(5L);
+        user.setUsername("operator");
+        user.setStatus("ENABLED");
+
+        SysRole role = new SysRole();
+        role.setId(2L);
+        role.setRoleCode("ROLE_OPERATOR");
+
+        when(mapper.findById(5L)).thenReturn(user);
+        when(roleMapper.findById(2L)).thenReturn(role);
+        when(roleMapper.findRolesByUserId(5L))
+                .thenReturn(List.of(role));
+        when(permissionMapper.findPermissionsByUserId(5L))
+                .thenReturn(List.of());
+
+        UserVO vo = service.assignRoles(5L, List.of(2L));
+
+        verify(userRoleMapper).deleteByUserId(5L);
+        verify(userRoleMapper).insertIgnore(5L, 2L);
+        assertThat(vo.getRoles()).containsExactly("ROLE_OPERATOR");
     }
 }

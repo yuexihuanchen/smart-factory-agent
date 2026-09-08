@@ -9,4 +9,16 @@ import java.util.List;
 public interface SysRoleMapper {
 
     List<SysRole> findRolesByUserId(Long userId);
+
+    List<SysRole> findAll();
+
+    SysRole findById(Long id);
+
+    SysRole findByCode(String roleCode);
+
+    int insert(SysRole role);
+
+    int update(SysRole role);
+
+    int deleteById(Long id);
 }

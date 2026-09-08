@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Schema(description = "用户信息")
@@ -26,4 +27,10 @@ public class UserVO {
 
     @Schema(description = "更新时间")
     private LocalDateTime updatedAt;
+
+    @Schema(description = "角色编码列表")
+    private List<String> roles;
+
+    @Schema(description = "权限编码列表")
+    private List<String> permissions;
 }

@@ -73,4 +73,46 @@
 
     </select>
 
+    <select id="findAll"
+            resultMap="SysUserResultMap">
+
+        SELECT
+            id,
+            username,
+            password,
+            nickname,
+            status,
+            created_at,
+            updated_at
+        FROM sys_user
+        ORDER BY id
+
+    </select>
+
+    <update id="update"
+            parameterType="com.smartfactory.entity.SysUser">
+
+        UPDATE sys_user
+        <set>
+            <if test="nickname != null">
+                nickname = #{nickname},
+            </if>
+            <if test="password != null and password != ''">
+                password = #{password},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+        </set>
+        WHERE id = #{id}
+
+    </update>
+
+    <delete id="deleteById">
+
+        DELETE FROM sys_user
+        WHERE id = #{id}
+
+    </delete>
+
 </mapper>
