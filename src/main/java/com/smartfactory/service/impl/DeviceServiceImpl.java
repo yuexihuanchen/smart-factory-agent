@@ -1,6 +1,8 @@
 package com.smartfactory.service.impl;
 
 import com.smartfactory.common.exception.BusinessException;
+import com.smartfactory.common.response.PageResult;
+import com.smartfactory.dto.DeviceQueryRequest;
 import com.smartfactory.entity.Device;
 import com.smartfactory.mapper.DeviceMapper;
 import com.smartfactory.service.DeviceService;
@@ -16,8 +18,35 @@ public class DeviceServiceImpl implements DeviceService {
     private final DeviceMapper deviceMapper;
 
     @Override
-    public List<Device> findAll() {
-        return deviceMapper.findAll();
+    public PageResult<Device> findPage(DeviceQueryRequest request) {
+
+        int page = request.getPage();
+        int size = request.getSize();
+
+        int offset = (page - 1) * size;
+
+        List<Device> records = deviceMapper.findPage(
+                offset,
+                size,
+                request.getKeyword(),
+                request.getDeviceType(),
+                request.getStatus(),
+                request.getProtocol()
+        );
+
+        long total = deviceMapper.count(
+                request.getKeyword(),
+                request.getDeviceType(),
+                request.getStatus(),
+                request.getProtocol()
+        );
+
+        return new PageResult<>(
+                records,
+                page,
+                size,
+                total
+        );
     }
 
     @Override

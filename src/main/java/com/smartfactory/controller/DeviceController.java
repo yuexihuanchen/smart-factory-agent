@@ -21,6 +21,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import com.smartfactory.common.response.PageResult;
+import com.smartfactory.dto.DeviceQueryRequest;
+
 import java.util.List;
 
 @RestController
@@ -46,12 +49,11 @@ public class DeviceController {
             summary = "查询设备列表",
             description = "查询系统中的所有设备"
     )
-    public Result<List<Device>> findAll() {
+    public Result<PageResult<Device>> findPage(
+        @Valid DeviceQueryRequest request) {
 
-        return Result.success(
-                deviceService.findAll()
-        );
-    }
+    return Result.success(deviceService.findPage(request));
+}
 
     /**
      * 查询设备详情

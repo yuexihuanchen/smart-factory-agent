@@ -50,26 +50,72 @@
 
 
     <!-- 查询全部设备 -->
-    <select id="findAll"
-            resultMap="DeviceResultMap">
+    <select id="findPage" resultMap="DeviceResultMap">
+    SELECT
+        id,
+        device_code,
+        device_name,
+        device_type,
+        location,
+        ip_address,
+        port,
+        protocol,
+        status,
+        description,
+        created_at,
+        updated_at
+    FROM device
 
-        SELECT
-            id,
-            device_code,
-            device_name,
-            device_type,
-            location,
-            ip_address,
-            port,
-            protocol,
-            status,
-            description,
-            created_at,
-            updated_at
-        FROM device
-        ORDER BY id DESC
+    <where>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                device_code LIKE CONCAT('%', #{keyword}, '%')
+                OR device_name LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
 
-    </select>
+        <if test="deviceType != null and deviceType != ''">
+            AND device_type = #{deviceType}
+        </if>
+
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+
+        <if test="protocol != null and protocol != ''">
+            AND protocol = #{protocol}
+        </if>
+    </where>
+
+    ORDER BY id DESC
+    LIMIT #{size} OFFSET #{offset}
+</select>
+
+        <select id="count" resultType="long">
+    SELECT COUNT(*)
+    FROM device
+
+    <where>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                device_code LIKE CONCAT('%', #{keyword}, '%')
+                OR device_name LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+
+        <if test="deviceType != null and deviceType != ''">
+            AND device_type = #{deviceType}
+        </if>
+
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+
+        <if test="protocol != null and protocol != ''">
+            AND protocol = #{protocol}
+        </if>
+    </where>
+</select>
 
 
     <!-- 根据ID查询 -->

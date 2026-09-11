@@ -1,12 +1,12 @@
 package com.smartfactory.service;
 
+import com.smartfactory.common.response.PageResult;
+import com.smartfactory.dto.DeviceQueryRequest;
 import com.smartfactory.entity.Device;
-
-import java.util.List;
 
 public interface DeviceService {
 
-    List<Device> findAll();
+    PageResult<Device> findPage(DeviceQueryRequest request);
 
     Device findById(Long id);
 

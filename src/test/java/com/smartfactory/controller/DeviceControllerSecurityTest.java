@@ -22,13 +22,16 @@ import org.springframework.context.annotation.Bean;
 
 import com.smartfactory.security.JwtTokenBlacklistService;
 
-import java.util.List;
+import com.smartfactory.common.response.PageResult;
+import com.smartfactory.entity.Device;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.List;
 
 @WebMvcTest(DeviceController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -65,16 +68,28 @@ class DeviceControllerSecurityTest {
         }
     }
 
-    @Test
-    @WithMockUser(authorities = "device:read")
-    void listDevicesAllowedWithDeviceRead() throws Exception {
+   @Test
+@WithMockUser(authorities = "device:read")
+void listDevicesAllowedWithDeviceRead() throws Exception {
 
-        when(deviceService.findAll()).thenReturn(List.of());
+    PageResult<Device> pageResult =
+            new PageResult<>(
+                    List.of(),
+                    1,
+                    20,
+                    0L
+            );
 
-        mockMvc.perform(get("/api/devices"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
-    }
+    when(deviceService.findPage(org.mockito.ArgumentMatchers.any()))
+            .thenReturn(pageResult);
+
+    mockMvc.perform(get("/api/devices"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.code").value(200))
+            .andExpect(jsonPath("$.data.page").value(1))
+            .andExpect(jsonPath("$.data.size").value(20))
+            .andExpect(jsonPath("$.data.total").value(0));
+}
 
     @Test
     @WithMockUser(authorities = "alarm:read")
