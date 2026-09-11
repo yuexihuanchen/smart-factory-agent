@@ -13,6 +13,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.smartfactory.dto.RefreshTokenRequest;
+import com.smartfactory.vo.RefreshTokenResponse;
+import com.smartfactory.dto.LogoutRequest;
+import org.springframework.security.authentication.BadCredentialsException;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -37,18 +41,40 @@ public class AuthController {
         );
     }
 
+    @PostMapping("/refresh")
+@Operation(
+        summary = "刷新访问令牌",
+        description = "使用 Refresh Token 换取新的 Access Token 和 Refresh Token"
+)
+public Result<RefreshTokenResponse> refresh(
+        @Valid @RequestBody RefreshTokenRequest request) {
+
+    return Result.success(
+            authService.refresh(request)
+    );
+}
+
     @PostMapping("/logout")
-    @Operation(
-            summary = "退出登录",
-            description = "将当前 JWT 加入 Redis 黑名单，使令牌立即失效"
-    )
-    public Result<Void> logout(
-            @RequestHeader("Authorization") String authorization) {
+@Operation(
+    summary = "退出登录",
+    description = "同时撤销当前 Access Token 和 Refresh Token"
+)
+public Result<Void> logout(
+    @RequestHeader("Authorization") String authorization,
+    @Valid @RequestBody LogoutRequest request) {
 
-        String token = authorization.substring(7);
-
-        authService.logout(token);
-
-        return Result.success(null);
+    if (authorization == null ||
+        !authorization.startsWith("Bearer ")) {
+        throw new BadCredentialsException("Authorization 请求头无效");
     }
+
+    String accessToken = authorization.substring(7);
+
+    authService.logout(
+        accessToken,
+        request.getRefreshToken()
+    );
+
+    return Result.success(null);
+}
 }

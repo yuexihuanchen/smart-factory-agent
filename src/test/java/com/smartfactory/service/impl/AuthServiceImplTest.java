@@ -3,6 +3,7 @@ package com.smartfactory.service.impl;
 import com.smartfactory.dto.LoginRequest;
 import com.smartfactory.security.JwtTokenBlacklistService;
 import com.smartfactory.security.JwtTokenService;
+import com.smartfactory.security.RefreshTokenService;
 import com.smartfactory.vo.LoginResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -24,7 +25,7 @@ import static org.mockito.Mockito.when;
 class AuthServiceImplTest {
 
     @Test
-    void loginReturnsTokenAndAuthorities() {
+    void loginReturnsAccessTokenRefreshTokenAndAuthorities() {
 
         UserDetailsService userDetailsService =
                 mock(UserDetailsService.class);
@@ -32,6 +33,8 @@ class AuthServiceImplTest {
                 mock(PasswordEncoder.class);
         JwtTokenService jwtTokenService =
                 mock(JwtTokenService.class);
+        RefreshTokenService refreshTokenService =
+                mock(RefreshTokenService.class);
         JwtTokenBlacklistService jwtTokenBlacklistService =
                 mock(JwtTokenBlacklistService.class);
 
@@ -39,6 +42,7 @@ class AuthServiceImplTest {
                 userDetailsService,
                 passwordEncoder,
                 jwtTokenService,
+                refreshTokenService,
                 jwtTokenBlacklistService
         );
 
@@ -54,25 +58,47 @@ class AuthServiceImplTest {
 
         when(userDetailsService.loadUserByUsername("admin"))
                 .thenReturn(user);
+
         when(passwordEncoder.matches("123456", "hash"))
                 .thenReturn(true);
+
         when(jwtTokenService.generateToken(user))
                 .thenReturn("jwt-token");
+
         when(jwtTokenService.getExpirationSeconds())
                 .thenReturn(7200L);
 
+        when(refreshTokenService.create("admin"))
+                .thenReturn("refresh-token");
+
+        when(refreshTokenService.getExpirationSeconds())
+                .thenReturn(604800L);
+
         LoginResponse response = service.login(request);
 
-        assertThat(response.getToken())
+        assertThat(response.getAccessToken())
                 .isEqualTo("jwt-token");
+
         assertThat(response.getTokenType())
                 .isEqualTo("Bearer");
+
         assertThat(response.getUsername())
                 .isEqualTo("admin");
+
         assertThat(response.getExpiresInSeconds())
                 .isEqualTo(7200L);
+
+        assertThat(response.getRefreshToken())
+                .isEqualTo("refresh-token");
+
+        assertThat(response.getRefreshExpiresInSeconds())
+                .isEqualTo(604800L);
+
         assertThat(response.getAuthorities())
                 .containsExactly("user:create");
+
+        verify(refreshTokenService)
+                .create("admin");
     }
 
     @Test
@@ -84,6 +110,8 @@ class AuthServiceImplTest {
                 mock(PasswordEncoder.class);
         JwtTokenService jwtTokenService =
                 mock(JwtTokenService.class);
+        RefreshTokenService refreshTokenService =
+                mock(RefreshTokenService.class);
         JwtTokenBlacklistService jwtTokenBlacklistService =
                 mock(JwtTokenBlacklistService.class);
 
@@ -91,6 +119,7 @@ class AuthServiceImplTest {
                 userDetailsService,
                 passwordEncoder,
                 jwtTokenService,
+                refreshTokenService,
                 jwtTokenBlacklistService
         );
 
@@ -106,6 +135,7 @@ class AuthServiceImplTest {
 
         when(userDetailsService.loadUserByUsername("admin"))
                 .thenReturn(user);
+
         when(passwordEncoder.matches("wrong", "hash"))
                 .thenReturn(false);
 
@@ -114,5 +144,8 @@ class AuthServiceImplTest {
 
         verify(jwtTokenService, never())
                 .generateToken(user);
+
+        verify(refreshTokenService, never())
+                .create("admin");
     }
 }

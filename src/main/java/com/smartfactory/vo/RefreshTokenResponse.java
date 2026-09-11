@@ -6,10 +6,10 @@ import lombok.Data;
 import java.util.List;
 
 @Data
-@Schema(description = "登录结果")
-public class LoginResponse {
+@Schema(description = "刷新令牌结果")
+public class RefreshTokenResponse {
 
-    @Schema(description = "访问令牌")
+    @Schema(description = "新的访问令牌")
     private String accessToken;
 
     @Schema(description = "令牌类型", example = "Bearer")
@@ -18,7 +18,7 @@ public class LoginResponse {
     @Schema(description = "访问令牌有效期（秒）")
     private long expiresInSeconds;
 
-    @Schema(description = "刷新令牌")
+    @Schema(description = "新的刷新令牌")
     private String refreshToken;
 
     @Schema(description = "刷新令牌有效期（秒）")
