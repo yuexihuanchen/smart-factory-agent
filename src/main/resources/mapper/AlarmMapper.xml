@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.smartfactory.mapper.AlarmMapper">
+
+    <resultMap id="AlarmResultMap"
+               type="com.smartfactory.entity.Alarm">
+
+        <id property="id"
+            column="id"/>
+
+        <result property="deviceId"
+                column="device_id"/>
+
+        <result property="alarmCode"
+                column="alarm_code"/>
+
+        <result property="alarmType"
+                column="alarm_type"/>
+
+        <result property="alarmLevel"
+                column="alarm_level"/>
+
+        <result property="title"
+                column="title"/>
+
+        <result property="message"
+                column="message"/>
+
+        <result property="status"
+                column="status"/>
+
+        <result property="firstOccurredAt"
+                column="first_occurred_at"/>
+
+        <result property="lastOccurredAt"
+                column="last_occurred_at"/>
+
+        <result property="acknowledgedAt"
+                column="acknowledged_at"/>
+
+        <result property="resolvedAt"
+                column="resolved_at"/>
+
+        <result property="acknowledgedBy"
+                column="acknowledged_by"/>
+
+        <result property="occurrenceCount"
+                column="occurrence_count"/>
+
+        <result property="createdAt"
+                column="created_at"/>
+
+        <result property="updatedAt"
+                column="updated_at"/>
+
+    </resultMap>
+
+    <sql id="AlarmColumns">
+        id,
+        device_id,
+        alarm_code,
+        alarm_type,
+        alarm_level,
+        title,
+        message,
+        status,
+        first_occurred_at,
+        last_occurred_at,
+        acknowledged_at,
+        resolved_at,
+        acknowledged_by,
+        occurrence_count,
+        created_at,
+        updated_at
+    </sql>
+
+    <sql id="AlarmQueryConditions">
+        <where>
+            <if test="deviceId != null">
+                AND device_id = #{deviceId}
+            </if>
+
+            <if test="alarmCode != null and alarmCode != ''">
+                AND alarm_code = #{alarmCode}
+            </if>
+
+            <if test="alarmLevel != null and alarmLevel != ''">
+                AND alarm_level = #{alarmLevel}
+            </if>
+
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    alarm_code LIKE CONCAT('%', #{keyword}, '%')
+                    OR title LIKE CONCAT('%', #{keyword}, '%')
+                    OR message LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+
+            <if test="startTime != null">
+                AND last_occurred_at &gt;= #{startTime}
+            </if>
+
+            <if test="endTime != null">
+                AND last_occurred_at &lt;= #{endTime}
+            </if>
+        </where>
+    </sql>
+
+    <select id="findPage"
+            resultMap="AlarmResultMap">
+
+        SELECT
+        <include refid="AlarmColumns"/>
+        FROM alarm
+
+        <include refid="AlarmQueryConditions"/>
+
+        ORDER BY id DESC
+        LIMIT #{size} OFFSET #{offset}
+
+    </select>
+
+    <select id="count"
+            resultType="long">
+
+        SELECT COUNT(*)
+        FROM alarm
+
+        <include refid="AlarmQueryConditions"/>
+
+    </select>
+
+    <select id="findById"
+            resultMap="AlarmResultMap">
+
+        SELECT
+        <include refid="AlarmColumns"/>
+        FROM alarm
+        WHERE id = #{id}
+
+    </select>
+
+    <select id="findOpenByDeviceIdAndAlarmCode"
+            resultMap="AlarmResultMap">
+
+        SELECT
+        <include refid="AlarmColumns"/>
+        FROM alarm
+        WHERE device_id = #{deviceId}
+          AND alarm_code = #{alarmCode}
+          AND status IN ('ACTIVE', 'ACKNOWLEDGED')
+        ORDER BY id DESC
+        LIMIT 1
+
+    </select>
+
+    <insert id="upsert"
+            parameterType="com.smartfactory.entity.Alarm"
+            useGeneratedKeys="true"
+            keyProperty="id">
+
+        INSERT INTO alarm
+        (
+            device_id,
+            alarm_code,
+            alarm_type,
+            alarm_level,
+            title,
+            message,
+            status,
+            first_occurred_at,
+            last_occurred_at,
+            acknowledged_at,
+            resolved_at,
+            acknowledged_by,
+            occurrence_count,
+            created_at,
+            updated_at
+        )
+        VALUES
+        (
+            #{deviceId},
+            #{alarmCode},
+            #{alarmType},
+            #{alarmLevel},
+            #{title},
+            #{message},
+            #{status},
+            COALESCE(#{firstOccurredAt}, CURRENT_TIMESTAMP),
+            COALESCE(#{lastOccurredAt}, CURRENT_TIMESTAMP),
+            #{acknowledgedAt},
+            #{resolvedAt},
+            #{acknowledgedBy},
+            #{occurrenceCount},
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+        )
+        ON DUPLICATE KEY UPDATE
+            occurrence_count = occurrence_count + 1,
+            last_occurred_at = GREATEST(
+                last_occurred_at,
+                COALESCE(#{lastOccurredAt}, CURRENT_TIMESTAMP)
+            ),
+            updated_at = CURRENT_TIMESTAMP
+
+    </insert>
+
+    <update id="acknowledge">
+
+        UPDATE alarm
+        SET
+            status = 'ACKNOWLEDGED',
+            acknowledged_at = #{acknowledgedAt},
+            acknowledged_by = #{acknowledgedBy},
+            updated_at = #{acknowledgedAt}
+        WHERE id = #{id}
+          AND status = 'ACTIVE'
+
+    </update>
+
+    <update id="resolve">
+
+        UPDATE alarm
+        SET
+            status = 'RESOLVED',
+            resolved_at = #{resolvedAt},
+            updated_at = #{resolvedAt}
+        WHERE id = #{id}
+          AND status IN ('ACTIVE', 'ACKNOWLEDGED')
+
+    </update>
+
+</mapper>
