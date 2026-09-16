@@ -8,6 +8,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Qualifier;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Configuration
 public class RabbitMQConfig {
 
@@ -20,6 +23,13 @@ public class RabbitMQConfig {
     public static final String DEVICE_ALARM_QUEUE = "device.alarm.queue";
 
     public static final String DEVICE_ALARM_ROUTING_KEY = "device.alarm";
+
+    public static final String DEVICE_ALARM_DLX = "device.alarm.dlx";
+
+    public static final String DEVICE_ALARM_DLQ = "device.alarm.dlq";
+
+    public static final String DEVICE_ALARM_DLQ_ROUTING_KEY =
+            "device.alarm.dlq";
 
     @Bean
     public DirectExchange deviceExchange() {
@@ -44,7 +54,26 @@ public class RabbitMQConfig {
 
     @Bean
     public Queue deviceAlarmQueue() {
-        return new Queue(DEVICE_ALARM_QUEUE, true);
+
+        Map<String, Object> arguments = new HashMap<>();
+
+        // Retry 耗尽且消息被 reject 时，由 RabbitMQ 原生死信机制转发。
+        arguments.put(
+                "x-dead-letter-exchange",
+                DEVICE_ALARM_DLX
+        );
+        arguments.put(
+                "x-dead-letter-routing-key",
+                DEVICE_ALARM_DLQ_ROUTING_KEY
+        );
+
+        return new Queue(
+                DEVICE_ALARM_QUEUE,
+                true,
+                false,
+                false,
+                arguments
+        );
     }
 
     @Bean
@@ -56,5 +85,26 @@ public class RabbitMQConfig {
                 .bind(deviceAlarmQueue)
                 .to(deviceExchange)
                 .with(DEVICE_ALARM_ROUTING_KEY);
+    }
+
+    @Bean
+    public DirectExchange deviceAlarmDlx() {
+        return new DirectExchange(DEVICE_ALARM_DLX);
+    }
+
+    @Bean
+    public Queue deviceAlarmDlq() {
+        return new Queue(DEVICE_ALARM_DLQ, true);
+    }
+
+    @Bean
+    public Binding deviceAlarmDlqBinding(
+            @Qualifier("deviceAlarmDlq") Queue deviceAlarmDlq,
+            @Qualifier("deviceAlarmDlx") DirectExchange deviceAlarmDlx) {
+
+        return BindingBuilder
+                .bind(deviceAlarmDlq)
+                .to(deviceAlarmDlx)
+                .with(DEVICE_ALARM_DLQ_ROUTING_KEY);
     }
 }

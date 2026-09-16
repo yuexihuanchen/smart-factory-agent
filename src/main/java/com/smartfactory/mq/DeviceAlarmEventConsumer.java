@@ -16,7 +16,10 @@ public class DeviceAlarmEventConsumer {
 
     private final AlarmService alarmService;
 
-    @RabbitListener(queues = RabbitMQConfig.DEVICE_ALARM_QUEUE)
+    @RabbitListener(
+            queues = RabbitMQConfig.DEVICE_ALARM_QUEUE,
+            containerFactory = "alarmRabbitListenerContainerFactory"
+    )
     public void consume(DeviceAlarmEventMessage message) {
 
         validateMessage(message);

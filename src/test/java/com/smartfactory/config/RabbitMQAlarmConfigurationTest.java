@@ -30,12 +30,24 @@ class RabbitMQAlarmConfigurationTest {
                     "deviceAlarmQueue",
                     Queue.class
             );
+            DirectExchange alarmDlx = context.getBean(
+                    "deviceAlarmDlx",
+                    DirectExchange.class
+            );
+            Queue alarmDlq = context.getBean(
+                    "deviceAlarmDlq",
+                    Queue.class
+            );
             Binding statusBinding = context.getBean(
                     "deviceStatusBinding",
                     Binding.class
             );
             Binding alarmBinding = context.getBean(
                     "deviceAlarmBinding",
+                    Binding.class
+            );
+            Binding alarmDlqBinding = context.getBean(
+                    "deviceAlarmDlqBinding",
                     Binding.class
             );
 
@@ -54,12 +66,38 @@ class RabbitMQAlarmConfigurationTest {
             assertThat(alarmQueue.getName())
                     .isEqualTo(RabbitMQConfig.DEVICE_ALARM_QUEUE);
             assertThat(alarmQueue.isDurable()).isTrue();
+            assertThat(alarmQueue.getArguments())
+                    .containsEntry(
+                            "x-dead-letter-exchange",
+                            RabbitMQConfig.DEVICE_ALARM_DLX
+                    )
+                    .containsEntry(
+                            "x-dead-letter-routing-key",
+                            RabbitMQConfig.DEVICE_ALARM_DLQ_ROUTING_KEY
+                    );
             assertThat(alarmBinding.getDestination())
                     .isEqualTo(RabbitMQConfig.DEVICE_ALARM_QUEUE);
             assertThat(alarmBinding.getExchange())
                     .isEqualTo(RabbitMQConfig.DEVICE_EXCHANGE);
             assertThat(alarmBinding.getRoutingKey())
                     .isEqualTo(RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY);
+
+            assertThat(alarmDlx.getName())
+                    .isEqualTo(RabbitMQConfig.DEVICE_ALARM_DLX);
+            assertThat(alarmDlx.isDurable()).isTrue();
+
+            assertThat(alarmDlq.getName())
+                    .isEqualTo(RabbitMQConfig.DEVICE_ALARM_DLQ);
+            assertThat(alarmDlq.isDurable()).isTrue();
+
+            assertThat(alarmDlqBinding.getDestination())
+                    .isEqualTo(RabbitMQConfig.DEVICE_ALARM_DLQ);
+            assertThat(alarmDlqBinding.getExchange())
+                    .isEqualTo(RabbitMQConfig.DEVICE_ALARM_DLX);
+            assertThat(alarmDlqBinding.getRoutingKey())
+                    .isEqualTo(
+                            RabbitMQConfig.DEVICE_ALARM_DLQ_ROUTING_KEY
+                    );
         }
     }
 }

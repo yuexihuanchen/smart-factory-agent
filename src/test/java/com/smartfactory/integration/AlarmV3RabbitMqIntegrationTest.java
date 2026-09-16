@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mysql.cj.jdbc.MysqlDataSource;
 import com.smartfactory.common.exception.BusinessException;
+import com.smartfactory.common.exception.TransientAlarmException;
 import com.smartfactory.config.RabbitMQConfig;
 import com.smartfactory.config.RabbitMQMessageConfig;
 import com.smartfactory.entity.Alarm;
@@ -32,14 +33,17 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.amqp.core.AcknowledgeMode;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageListenerContainer;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
+import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -137,7 +141,7 @@ class AlarmV3RabbitMqIntegrationTest {
             Duration.ofSeconds(15);
 
     private static final ObjectMapper OBJECT_MAPPER =
-            new ObjectMapper();
+            new ObjectMapper().findAndRegisterModules();
 
     @Autowired
     private DataSource dataSource;
@@ -192,16 +196,8 @@ class AlarmV3RabbitMqIntegrationTest {
     @AfterEach
     void tearDown() throws Exception {
 
-        waitUntil(
-                () -> queueMessageCount(
-                        RabbitMQConfig.DEVICE_ALARM_QUEUE
-                ) == 0,
-                WAIT_TIMEOUT,
-                this::diagnostics
-        );
-
         stopAlarmListener();
-        rabbitAdmin.purgeQueue(RabbitMQConfig.DEVICE_ALARM_QUEUE);
+        resetQueue();
         listenerErrors.clear();
     }
 
@@ -240,9 +236,19 @@ class AlarmV3RabbitMqIntegrationTest {
         JsonNode queue = managementClient().getQueue(
                 RabbitMQConfig.DEVICE_ALARM_QUEUE
         );
+        JsonNode dlx = managementClient().getExchange(
+                RabbitMQConfig.DEVICE_ALARM_DLX
+        );
+        JsonNode dlq = managementClient().getQueue(
+                RabbitMQConfig.DEVICE_ALARM_DLQ
+        );
         JsonNode bindings = managementClient().getBindings(
                 RabbitMQConfig.DEVICE_EXCHANGE,
                 RabbitMQConfig.DEVICE_ALARM_QUEUE
+        );
+        JsonNode dlqBindings = managementClient().getBindings(
+                RabbitMQConfig.DEVICE_ALARM_DLX,
+                RabbitMQConfig.DEVICE_ALARM_DLQ
         );
 
         assertThat(exchange).isNotNull();
@@ -254,11 +260,35 @@ class AlarmV3RabbitMqIntegrationTest {
         assertThat(queue).isNotNull();
         assertThat(queue.path("durable").asBoolean())
                 .isTrue();
+        assertThat(queue.path("arguments")
+                .path("x-dead-letter-exchange").asText())
+                .isEqualTo(RabbitMQConfig.DEVICE_ALARM_DLX);
+        assertThat(queue.path("arguments")
+                .path("x-dead-letter-routing-key").asText())
+                .isEqualTo(RabbitMQConfig.DEVICE_ALARM_DLQ_ROUTING_KEY);
+
+        assertThat(dlx).isNotNull();
+        assertThat(dlx.path("type").asText())
+                .isEqualTo("direct");
+        assertThat(dlx.path("durable").asBoolean())
+                .isTrue();
+
+        assertThat(dlq).isNotNull();
+        assertThat(dlq.path("durable").asBoolean())
+                .isTrue();
+        assertThat(dlq.path("consumers").asInt())
+                .isZero();
 
         assertThat(bindings)
                 .anySatisfy(binding -> assertThat(
                         binding.path("routing_key").asText()
                 ).isEqualTo(RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY));
+        assertThat(dlqBindings)
+                .anySatisfy(binding -> assertThat(
+                        binding.path("routing_key").asText()
+                ).isEqualTo(
+                        RabbitMQConfig.DEVICE_ALARM_DLQ_ROUTING_KEY
+                ));
     }
 
     @Test
@@ -267,8 +297,9 @@ class AlarmV3RabbitMqIntegrationTest {
         stopAlarmListener();
         resetQueue();
 
+        String eventId = "EVT-ROUTE-" + UUID.randomUUID();
         DeviceAlarmEventMessage message = message(
-                "EVT-ROUTE-" + UUID.randomUUID(),
+                eventId,
                 LocalDateTime.of(2026, 9, 16, 10, 0)
         );
 
@@ -287,6 +318,15 @@ class AlarmV3RabbitMqIntegrationTest {
         )).isEqualTo(1);
 
         startAlarmListener();
+
+        waitUntil(
+                () -> eventCount(eventId) == 1
+                        && queueMessageCount(
+                                RabbitMQConfig.DEVICE_ALARM_QUEUE
+                        ) == 0,
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
     }
 
     @Test
@@ -452,6 +492,19 @@ class AlarmV3RabbitMqIntegrationTest {
 
         producer.send(message);
 
+        waitUntil(
+                () -> queueMessageCount(
+                        RabbitMQConfig.DEVICE_ALARM_QUEUE
+                ) == 0
+                        && queueMessageCount(
+                                RabbitMQConfig.DEVICE_ALARM_DLQ
+                        ) == 1
+                        && countingAlarmService.callCount() == 1
+                        && !listenerErrors.isEmpty(),
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+
         Throwable error = listenerErrors.poll(15, TimeUnit.SECONDS);
 
         assertThat(error).isNotNull();
@@ -475,6 +528,21 @@ class AlarmV3RabbitMqIntegrationTest {
                 WAIT_TIMEOUT,
                 this::diagnostics
         );
+
+        DeviceAlarmEventMessage dlqMessage = receiveDlqMessage();
+
+        assertThat(dlqMessage.getSource())
+                .isEqualTo(message.getSource());
+        assertThat(dlqMessage.getEventId())
+                .isEqualTo(message.getEventId());
+        assertThat(dlqMessage.getDeviceId())
+                .isEqualTo(message.getDeviceId());
+        assertThat(dlqMessage.getAlarmCode())
+                .isEqualTo(message.getAlarmCode());
+        assertThat(dlqMessage.getOccurredAt())
+                .isEqualTo(message.getOccurredAt());
+        assertThat(dlqMessage.getPayload())
+                .isEqualTo(message.getPayload());
     }
 
     @Test
@@ -581,6 +649,74 @@ class AlarmV3RabbitMqIntegrationTest {
                 .isEqualTo(Timestamp.valueOf(newer.getOccurredAt()));
     }
 
+    @Test
+    void transientFailureIsRetriedThenSucceeds() throws Exception {
+
+        String eventId = "EVT-RETRY-" + UUID.randomUUID();
+
+        countingAlarmService.failNext(1);
+
+        producer.send(message(
+                eventId,
+                LocalDateTime.of(2026, 9, 16, 10, 0)
+        ));
+
+        waitUntil(
+                () -> countingAlarmService.callCount() == 2
+                        && countingAlarmService.responseCount() == 1
+                        && eventCount(eventId) == 1
+                        && alarmCount() == 1
+                        && alarmOccurrenceCount() == 1
+                        && queueMessageCount(
+                                RabbitMQConfig.DEVICE_ALARM_QUEUE
+                        ) == 0,
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+
+        assertThat(countingAlarmService.transientFailureCount())
+                .isEqualTo(1);
+        assertThat(listenerErrors).isEmpty();
+    }
+
+    @Test
+    void transientFailureExhaustsRetriesAndGoesToDlq()
+            throws Exception {
+
+        String eventId = "EVT-RETRY-DLQ-" + UUID.randomUUID();
+        DeviceAlarmEventMessage message = message(
+                eventId,
+                LocalDateTime.of(2026, 9, 16, 10, 0)
+        );
+
+        countingAlarmService.failNext(3);
+
+        producer.send(message);
+
+        waitUntil(
+                () -> countingAlarmService.callCount() == 3
+                        && queueMessageCount(
+                                RabbitMQConfig.DEVICE_ALARM_QUEUE
+                        ) == 0
+                        && queueMessageCount(
+                                RabbitMQConfig.DEVICE_ALARM_DLQ
+                        ) == 1
+                        && !listenerErrors.isEmpty(),
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+
+        Throwable error = listenerErrors.poll(1, TimeUnit.SECONDS);
+        assertThat(error).isNotNull();
+        assertThat(rootCause(error))
+                .isInstanceOf(TransientAlarmException.class);
+
+        DeviceAlarmEventMessage dlqMessage = receiveDlqMessage();
+        assertThat(dlqMessage.getEventId()).isEqualTo(eventId);
+        assertThat(eventCount(eventId)).isZero();
+        assertThat(alarmCount()).isZero();
+    }
+
     private void resetDatabase() throws Exception {
 
         try (Connection connection =
@@ -657,6 +793,29 @@ class AlarmV3RabbitMqIntegrationTest {
 
     private void resetQueue() {
         rabbitAdmin.purgeQueue(RabbitMQConfig.DEVICE_ALARM_QUEUE);
+        rabbitAdmin.purgeQueue(RabbitMQConfig.DEVICE_ALARM_DLQ);
+    }
+
+    private DeviceAlarmEventMessage receiveDlqMessage()
+            throws Exception {
+
+        Message rawMessage = rabbitTemplate.receive(
+                RabbitMQConfig.DEVICE_ALARM_DLQ,
+                10_000
+        );
+
+        assertThat(rawMessage).isNotNull();
+
+        DeviceAlarmEventMessage converted =
+                OBJECT_MAPPER.readValue(
+                        rawMessage.getBody(),
+                        DeviceAlarmEventMessage.class
+        );
+
+        assertThat(converted)
+                .isInstanceOf(DeviceAlarmEventMessage.class);
+
+        return converted;
     }
 
     private void startAlarmListener() {
@@ -870,6 +1029,14 @@ class AlarmV3RabbitMqIntegrationTest {
 
         return "queue=" + managementClient()
                 .getQueue(RabbitMQConfig.DEVICE_ALARM_QUEUE)
+                + ", dlq=" + managementClient()
+                .getQueue(RabbitMQConfig.DEVICE_ALARM_DLQ)
+                + ", serviceCalls="
+                + countingAlarmService.callCount()
+                + ", transientFailures="
+                + countingAlarmService.transientFailureCount()
+                + ", lastListenerError="
+                + listenerErrors.peek()
                 + ", alarmEvents=" + count(
                 "SELECT COUNT(*) FROM alarm_event"
         )
@@ -894,8 +1061,14 @@ class AlarmV3RabbitMqIntegrationTest {
 
         private final AtomicInteger calls = new AtomicInteger();
 
+        private final AtomicInteger transientFailuresRemaining =
+                new AtomicInteger();
+
         private final BlockingQueue<AlarmProcessResponse> responses =
                 new LinkedBlockingQueue<>();
+
+        private final BlockingQueue<TransientAlarmException>
+                transientFailures = new LinkedBlockingQueue<>();
 
         private CountingAlarmService(AlarmService delegate) {
             this.delegate = delegate;
@@ -906,6 +1079,17 @@ class AlarmV3RabbitMqIntegrationTest {
                 AlarmEventCommand command) {
 
             calls.incrementAndGet();
+
+            if (transientFailuresRemaining.getAndUpdate(
+                    current -> current > 0 ? current - 1 : 0
+            ) > 0) {
+                TransientAlarmException failure =
+                        new TransientAlarmException(
+                                "Simulated transient AlarmService failure"
+                        );
+                transientFailures.add(failure);
+                throw failure;
+            }
 
             AlarmProcessResponse response =
                     delegate.processEvent(command);
@@ -943,6 +1127,14 @@ class AlarmV3RabbitMqIntegrationTest {
             return responses.size();
         }
 
+        private int transientFailureCount() {
+            return transientFailures.size();
+        }
+
+        private void failNext(int count) {
+            transientFailuresRemaining.set(count);
+        }
+
         private List<AlarmProcessResponse> responses() {
 
             List<AlarmProcessResponse> result =
@@ -954,7 +1146,9 @@ class AlarmV3RabbitMqIntegrationTest {
 
         private void reset() {
             calls.set(0);
+            transientFailuresRemaining.set(0);
             responses.clear();
+            transientFailures.clear();
         }
     }
 
@@ -1240,7 +1434,7 @@ class AlarmV3RabbitMqIntegrationTest {
 
         @Bean
         SimpleRabbitListenerContainerFactory
-        rabbitListenerContainerFactory(
+        alarmRabbitListenerContainerFactory(
                 ConnectionFactory rabbitConnectionFactory,
                 JacksonJsonMessageConverter converter,
                 BlockingQueue<Throwable> listenerErrors) {
@@ -1253,6 +1447,25 @@ class AlarmV3RabbitMqIntegrationTest {
             factory.setAutoStartup(false);
             factory.setDefaultRequeueRejected(false);
             factory.setErrorHandler(listenerErrors::add);
+            factory.setAdviceChain(
+                    RetryInterceptorBuilder
+                            .stateless()
+                            .configureRetryPolicy(retryPolicy ->
+                                    retryPolicy
+                                            .maxRetries(2)
+                                            .includes(
+                                                    TransientAlarmException.class
+                                            )
+                                            .excludes(
+                                                    BusinessException.class
+                                            )
+                            )
+                            .backOffOptions(100, 1.0, 300)
+                            .recoverer(
+                                    new RejectAndDontRequeueRecoverer()
+                            )
+                            .build()
+            );
             return factory;
         }
 
