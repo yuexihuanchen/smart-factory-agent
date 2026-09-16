@@ -2,7 +2,6 @@ package com.smartfactory.service.impl;
 
 import com.smartfactory.common.exception.BusinessException;
 import com.smartfactory.common.response.PageResult;
-import com.smartfactory.dto.AlarmCreateRequest;
 import com.smartfactory.dto.AlarmQueryRequest;
 import com.smartfactory.entity.Alarm;
 import com.smartfactory.entity.AlarmEvent;
@@ -16,6 +15,7 @@ import com.smartfactory.mapper.AlarmMapper;
 import com.smartfactory.mapper.DeviceMapper;
 import com.smartfactory.mapper.SysUserMapper;
 import com.smartfactory.service.AlarmService;
+import com.smartfactory.service.command.AlarmEventCommand;
 import com.smartfactory.vo.AlarmProcessResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -38,26 +38,26 @@ public class AlarmServiceImpl implements AlarmService {
 
     @Override
     @Transactional
-    public AlarmProcessResponse processEvent(AlarmCreateRequest request) {
+    public AlarmProcessResponse processEvent(AlarmEventCommand command) {
 
-        validateEventRequest(request);
+        validateEventRequest(command);
 
-        AlarmEvent event = buildAlarmEvent(request);
+        AlarmEvent event = buildAlarmEvent(command);
         int inserted = alarmEventMapper.insert(event);
 
         if (inserted == 0) {
-            return handleDuplicateEvent(request);
+            return handleDuplicateEvent(command);
         }
 
-        Device device = deviceMapper.findById(request.getDeviceId());
+        Device device = deviceMapper.findById(command.getDeviceId());
 
         if (device == null) {
             throw new BusinessException(40401, "设备不存在");
         }
 
-        alarmMapper.upsert(buildNewAlarm(request));
+        alarmMapper.upsert(buildNewAlarm(command));
 
-        Alarm alarm = requireOpenAlarm(request);
+        Alarm alarm = requireOpenAlarm(command);
 
         int rows = alarmEventMapper.updateAlarmId(
                 event.getId(),
@@ -75,11 +75,11 @@ public class AlarmServiceImpl implements AlarmService {
     }
 
     private AlarmProcessResponse handleDuplicateEvent(
-            AlarmCreateRequest request) {
+            AlarmEventCommand command) {
 
         AlarmEvent event = alarmEventMapper.findBySourceAndEventId(
-                request.getSource(),
-                request.getEventId()
+                command.getSource(),
+                command.getEventId()
         );
 
         if (event == null || event.getAlarmId() == null) {
@@ -222,38 +222,38 @@ public class AlarmServiceImpl implements AlarmService {
         return requireAlarm(id);
     }
 
-    private void validateEventRequest(AlarmCreateRequest request) {
+    private void validateEventRequest(AlarmEventCommand command) {
 
-        if (request.getDeviceId() == null
-                || request.getDeviceId() <= 0) {
+        if (command.getDeviceId() == null
+                || command.getDeviceId() <= 0) {
             throw new BusinessException(40001, "设备ID必须大于0");
         }
 
-        if (request.getSource() == null
-                || request.getSource().isBlank()
-                || request.getSource().length() > 64
-                || !isAscii(request.getSource())) {
+        if (command.getSource() == null
+                || command.getSource().isBlank()
+                || command.getSource().length() > 64
+                || !isAscii(command.getSource())) {
             throw new BusinessException(40001, "事件来源非法");
         }
 
-        if (request.getEventId() == null
-                || request.getEventId().isBlank()
-                || request.getEventId().length() > 128
-                || !isAscii(request.getEventId())) {
+        if (command.getEventId() == null
+                || command.getEventId().isBlank()
+                || command.getEventId().length() > 128
+                || !isAscii(command.getEventId())) {
             throw new BusinessException(40001, "事件ID非法");
         }
 
-        if (request.getAlarmCode() == null
-                || request.getAlarmCode().isBlank()
-                || request.getAlarmCode().length() > 64) {
+        if (command.getAlarmCode() == null
+                || command.getAlarmCode().isBlank()
+                || command.getAlarmCode().length() > 64) {
             throw new BusinessException(40001, "告警编码不能为空");
         }
 
-        if (request.getOccurredAt() == null) {
+        if (command.getOccurredAt() == null) {
             throw new BusinessException(40001, "故障发生时间不能为空");
         }
 
-        if (!AlarmLevel.isValid(request.getAlarmLevel())) {
+        if (!AlarmLevel.isValid(command.getAlarmLevel())) {
             throw new BusinessException(40010, "告警等级非法");
         }
     }
@@ -282,42 +282,43 @@ public class AlarmServiceImpl implements AlarmService {
         }
     }
 
-    private Alarm buildNewAlarm(AlarmCreateRequest request) {
+    private Alarm buildNewAlarm(AlarmEventCommand command) {
 
         Alarm alarm = new Alarm();
 
-        alarm.setDeviceId(request.getDeviceId());
-        alarm.setAlarmCode(request.getAlarmCode());
-        alarm.setAlarmType(request.getAlarmType());
-        alarm.setAlarmLevel(request.getAlarmLevel());
-        alarm.setTitle(request.getTitle());
-        alarm.setMessage(request.getMessage());
+        alarm.setDeviceId(command.getDeviceId());
+        alarm.setAlarmCode(command.getAlarmCode());
+        alarm.setAlarmType(command.getAlarmType());
+        alarm.setAlarmLevel(command.getAlarmLevel());
+        alarm.setTitle(command.getTitle());
+        alarm.setMessage(command.getMessage());
         alarm.setStatus(AlarmStatus.ACTIVE.name());
-        alarm.setFirstOccurredAt(request.getOccurredAt());
-        alarm.setLastOccurredAt(request.getOccurredAt());
+        alarm.setFirstOccurredAt(command.getOccurredAt());
+        alarm.setLastOccurredAt(command.getOccurredAt());
         alarm.setOccurrenceCount(1);
 
         return alarm;
     }
 
-    private AlarmEvent buildAlarmEvent(AlarmCreateRequest request) {
+    private AlarmEvent buildAlarmEvent(AlarmEventCommand command) {
 
         AlarmEvent event = new AlarmEvent();
 
-        event.setSource(request.getSource());
-        event.setEventId(request.getEventId());
-        event.setDeviceId(request.getDeviceId());
-        event.setAlarmCode(request.getAlarmCode());
-        event.setOccurredAt(request.getOccurredAt());
+        event.setSource(command.getSource());
+        event.setEventId(command.getEventId());
+        event.setDeviceId(command.getDeviceId());
+        event.setAlarmCode(command.getAlarmCode());
+        event.setOccurredAt(command.getOccurredAt());
+        event.setPayload(command.getPayload());
 
         return event;
     }
 
-    private Alarm requireOpenAlarm(AlarmCreateRequest request) {
+    private Alarm requireOpenAlarm(AlarmEventCommand command) {
 
         Alarm alarm = alarmMapper.findOpenByDeviceIdAndAlarmCode(
-                request.getDeviceId(),
-                request.getAlarmCode()
+                command.getDeviceId(),
+                command.getAlarmCode()
         );
 
         if (alarm == null) {

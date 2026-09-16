@@ -6,6 +6,7 @@ import com.smartfactory.dto.AlarmCreateRequest;
 import com.smartfactory.dto.AlarmQueryRequest;
 import com.smartfactory.entity.Alarm;
 import com.smartfactory.service.AlarmService;
+import com.smartfactory.service.command.AlarmEventCommand;
 import com.smartfactory.vo.AlarmProcessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,7 +43,9 @@ public class AlarmController {
             @RequestBody
             AlarmCreateRequest request) {
 
-        return Result.success(alarmService.processEvent(request));
+        return Result.success(
+                alarmService.processEvent(toCommand(request))
+        );
     }
 
     @PreAuthorize("hasAuthority('alarm:read')")
@@ -92,5 +95,22 @@ public class AlarmController {
             Long id) {
 
         return Result.success(alarmService.resolve(id));
+    }
+
+    private AlarmEventCommand toCommand(AlarmCreateRequest request) {
+
+        AlarmEventCommand command = new AlarmEventCommand();
+
+        command.setSource(request.getSource());
+        command.setEventId(request.getEventId());
+        command.setDeviceId(request.getDeviceId());
+        command.setAlarmCode(request.getAlarmCode());
+        command.setAlarmType(request.getAlarmType());
+        command.setAlarmLevel(request.getAlarmLevel());
+        command.setTitle(request.getTitle());
+        command.setMessage(request.getMessage());
+        command.setOccurredAt(request.getOccurredAt());
+
+        return command;
     }
 }

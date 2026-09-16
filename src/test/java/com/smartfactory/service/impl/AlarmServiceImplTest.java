@@ -2,7 +2,6 @@ package com.smartfactory.service.impl;
 
 import com.smartfactory.common.exception.BusinessException;
 import com.smartfactory.common.response.PageResult;
-import com.smartfactory.dto.AlarmCreateRequest;
 import com.smartfactory.dto.AlarmQueryRequest;
 import com.smartfactory.entity.Alarm;
 import com.smartfactory.entity.AlarmEvent;
@@ -13,6 +12,7 @@ import com.smartfactory.mapper.AlarmEventMapper;
 import com.smartfactory.mapper.AlarmMapper;
 import com.smartfactory.mapper.DeviceMapper;
 import com.smartfactory.mapper.SysUserMapper;
+import com.smartfactory.service.command.AlarmEventCommand;
 import com.smartfactory.vo.AlarmProcessResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,7 +60,7 @@ class AlarmServiceImplTest {
     @Test
     void processEventCreatesNewEventAndAlarm() {
 
-        AlarmCreateRequest request = createRequest();
+        AlarmEventCommand request = createRequest();
         Alarm persisted = alarm(11L, "ACTIVE", 1);
 
         when(alarmEventMapper.insert(any(AlarmEvent.class)))
@@ -86,7 +86,11 @@ class AlarmServiceImplTest {
         assertThat(response.getAlarm().getOccurrenceCount())
                 .isEqualTo(1);
 
-        verify(alarmEventMapper).insert(any(AlarmEvent.class));
+        ArgumentCaptor<AlarmEvent> eventCaptor =
+                ArgumentCaptor.forClass(AlarmEvent.class);
+        verify(alarmEventMapper).insert(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getPayload())
+                .isEqualTo("{\"temperature\":95}");
         verify(alarmMapper).upsert(any(Alarm.class));
         verify(alarmEventMapper).updateAlarmId(21L, 11L);
     }
@@ -94,7 +98,7 @@ class AlarmServiceImplTest {
     @Test
     void processDuplicateEventDoesNotUpsertAlarm() {
 
-        AlarmCreateRequest request = createRequest();
+        AlarmEventCommand request = createRequest();
         AlarmEvent existingEvent = event(21L, 11L);
         Alarm persisted = alarm(11L, "ACTIVE", 1);
 
@@ -121,8 +125,8 @@ class AlarmServiceImplTest {
     @Test
     void processDifferentEventsAggregatesIntoSameAlarm() {
 
-        AlarmCreateRequest firstRequest = createRequest();
-        AlarmCreateRequest secondRequest = createRequest();
+        AlarmEventCommand firstRequest = createRequest();
+        AlarmEventCommand secondRequest = createRequest();
         secondRequest.setEventId("EVT-20260915-0002");
         secondRequest.setOccurredAt(
                 LocalDateTime.of(2026, 9, 15, 10, 5)
@@ -169,7 +173,7 @@ class AlarmServiceImplTest {
     @Test
     void processNewEventAfterResolvedCreatesNewAlarm() {
 
-        AlarmCreateRequest request = createRequest();
+        AlarmEventCommand request = createRequest();
         Alarm resolved = alarm(11L, "RESOLVED", 2);
         Alarm newAlarm = alarm(12L, "ACTIVE", 1);
 
@@ -203,7 +207,7 @@ class AlarmServiceImplTest {
     @Test
     void processEventPassesOccurredAtToAlarmUpsert() {
 
-        AlarmCreateRequest request = createRequest();
+        AlarmEventCommand request = createRequest();
         LocalDateTime occurredAt =
                 LocalDateTime.of(2026, 9, 15, 9, 30);
         request.setOccurredAt(occurredAt);
@@ -237,7 +241,7 @@ class AlarmServiceImplTest {
     @Test
     void processEventRejectsMissingDeviceAndStopsAlarmAggregation() {
 
-        AlarmCreateRequest request = createRequest();
+        AlarmEventCommand request = createRequest();
 
         when(alarmEventMapper.insert(any(AlarmEvent.class)))
                 .thenReturn(1);
@@ -256,16 +260,16 @@ class AlarmServiceImplTest {
     @Test
     void processEventRejectsInvalidEventFields() {
 
-        AlarmCreateRequest missingSource = createRequest();
+        AlarmEventCommand missingSource = createRequest();
         missingSource.setSource(" ");
 
-        AlarmCreateRequest missingEventId = createRequest();
+        AlarmEventCommand missingEventId = createRequest();
         missingEventId.setEventId(" ");
 
-        AlarmCreateRequest missingOccurredAt = createRequest();
+        AlarmEventCommand missingOccurredAt = createRequest();
         missingOccurredAt.setOccurredAt(null);
 
-        AlarmCreateRequest nonAsciiEventId = createRequest();
+        AlarmEventCommand nonAsciiEventId = createRequest();
         nonAsciiEventId.setEventId("事件-001");
 
         assertThatThrownBy(() -> service.processEvent(missingSource))
@@ -292,7 +296,7 @@ class AlarmServiceImplTest {
     @Test
     void processEventFailsWhenEventCannotLinkAlarm() {
 
-        AlarmCreateRequest request = createRequest();
+        AlarmEventCommand request = createRequest();
 
         when(alarmEventMapper.insert(any(AlarmEvent.class)))
                 .thenAnswer(invocation -> {
@@ -468,9 +472,9 @@ class AlarmServiceImplTest {
         verify(alarmMapper, never()).resolve(any(), any());
     }
 
-    private AlarmCreateRequest createRequest() {
+    private AlarmEventCommand createRequest() {
 
-        AlarmCreateRequest request = new AlarmCreateRequest();
+        AlarmEventCommand request = new AlarmEventCommand();
         request.setSource("EDGE-GATEWAY-01");
         request.setEventId("EVT-20260915-0001");
         request.setDeviceId(3L);
@@ -482,6 +486,7 @@ class AlarmServiceImplTest {
         request.setOccurredAt(
                 LocalDateTime.of(2026, 9, 15, 10, 0)
         );
+        request.setPayload("{\"temperature\":95}");
         return request;
     }
 

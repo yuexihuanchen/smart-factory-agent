@@ -1,7 +1,6 @@
 package com.smartfactory.integration;
 
 import com.smartfactory.common.exception.BusinessException;
-import com.smartfactory.dto.AlarmCreateRequest;
 import com.smartfactory.entity.Alarm;
 import com.smartfactory.enums.AlarmEventStatus;
 import com.smartfactory.mapper.AlarmEventMapper;
@@ -9,6 +8,7 @@ import com.smartfactory.mapper.AlarmMapper;
 import com.smartfactory.mapper.DeviceMapper;
 import com.smartfactory.mapper.SysUserMapper;
 import com.smartfactory.service.AlarmService;
+import com.smartfactory.service.command.AlarmEventCommand;
 import com.smartfactory.service.impl.AlarmServiceImpl;
 import com.smartfactory.vo.AlarmProcessResponse;
 import com.mysql.cj.jdbc.MysqlDataSource;
@@ -163,12 +163,12 @@ class AlarmV2MySqlIntegrationTest {
     void sameEventConcurrentlyCreatesOneEventAndOneAlarmOccurrence()
             throws Exception {
 
-        AlarmCreateRequest first = request(
+        AlarmEventCommand first = request(
                 "gateway-A",
                 "EVT-SAME-001",
                 LocalDateTime.of(2026, 9, 16, 10, 0)
         );
-        AlarmCreateRequest second = request(
+        AlarmEventCommand second = request(
                 "gateway-A",
                 "EVT-SAME-001",
                 LocalDateTime.of(2026, 9, 16, 10, 0)
@@ -219,12 +219,12 @@ class AlarmV2MySqlIntegrationTest {
     void differentEventsConcurrentlyAggregateIntoSameAlarm()
             throws Exception {
 
-        AlarmCreateRequest first = request(
+        AlarmEventCommand first = request(
                 "gateway-A",
                 "EVT-DIFF-001",
                 LocalDateTime.of(2026, 9, 16, 10, 0)
         );
-        AlarmCreateRequest second = request(
+        AlarmEventCommand second = request(
                 "gateway-A",
                 "EVT-DIFF-002",
                 LocalDateTime.of(2026, 9, 16, 10, 1)
@@ -281,7 +281,7 @@ class AlarmV2MySqlIntegrationTest {
     @Test
     void eventInsertRollsBackWhenAlarmBusinessFails() {
 
-        AlarmCreateRequest request = request(
+        AlarmEventCommand request = request(
                 "gateway-A",
                 "EVT-ROLLBACK-001",
                 LocalDateTime.of(2026, 9, 16, 10, 0)
@@ -400,7 +400,7 @@ class AlarmV2MySqlIntegrationTest {
     }
 
     private List<AlarmProcessResponse> processConcurrently(
-            AlarmCreateRequest... requests) throws Exception {
+            AlarmEventCommand... requests) throws Exception {
 
         ExecutorService executor = Executors.newFixedThreadPool(
                 requests.length
@@ -409,7 +409,7 @@ class AlarmV2MySqlIntegrationTest {
         List<Future<AlarmProcessResponse>> futures = new ArrayList<>();
 
         try {
-            for (AlarmCreateRequest request : requests) {
+            for (AlarmEventCommand request : requests) {
                 futures.add(executor.submit(() -> {
                     start.await();
                     return alarmService.processEvent(request);
@@ -430,12 +430,12 @@ class AlarmV2MySqlIntegrationTest {
         }
     }
 
-    private AlarmCreateRequest request(
+    private AlarmEventCommand request(
             String source,
             String eventId,
             LocalDateTime occurredAt) {
 
-        AlarmCreateRequest request = new AlarmCreateRequest();
+        AlarmEventCommand request = new AlarmEventCommand();
         request.setSource(source);
         request.setEventId(eventId);
         request.setDeviceId(DEVICE_ID);
