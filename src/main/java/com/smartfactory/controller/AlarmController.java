@@ -6,6 +6,7 @@ import com.smartfactory.dto.AlarmCreateRequest;
 import com.smartfactory.dto.AlarmQueryRequest;
 import com.smartfactory.entity.Alarm;
 import com.smartfactory.service.AlarmService;
+import com.smartfactory.vo.AlarmProcessResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -36,12 +37,12 @@ public class AlarmController {
             summary = "创建告警",
             description = "重复发生相同未恢复故障时聚合到现有告警"
     )
-    public Result<Alarm> create(
+    public Result<AlarmProcessResponse> create(
             @Valid
             @RequestBody
             AlarmCreateRequest request) {
 
-        return Result.success(alarmService.create(request));
+        return Result.success(alarmService.processEvent(request));
     }
 
     @PreAuthorize("hasAuthority('alarm:read')")

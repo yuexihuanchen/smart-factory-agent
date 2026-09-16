@@ -13,6 +13,16 @@ import java.time.LocalDateTime;
 @Schema(description = "创建告警请求")
 public class AlarmCreateRequest {
 
+    @Schema(description = "事件来源", example = "EDGE-GATEWAY-01")
+    @NotBlank(message = "事件来源不能为空")
+    @Size(max = 64, message = "事件来源长度不能超过64个字符")
+    private String source;
+
+    @Schema(description = "事件唯一标识", example = "EVT-20260915-0001")
+    @NotBlank(message = "事件ID不能为空")
+    @Size(max = 128, message = "事件ID长度不能超过128个字符")
+    private String eventId;
+
     @Schema(description = "设备ID", example = "3")
     @NotNull(message = "设备ID不能为空")
     @Positive(message = "设备ID必须大于0")
@@ -40,8 +50,9 @@ public class AlarmCreateRequest {
     private String message;
 
     @Schema(
-            description = "故障实际发生时间；为空时使用数据库当前时间",
+            description = "故障实际发生时间",
             example = "2026-09-15T15:30:00"
     )
+    @NotNull(message = "故障发生时间不能为空")
     private LocalDateTime occurredAt;
 }

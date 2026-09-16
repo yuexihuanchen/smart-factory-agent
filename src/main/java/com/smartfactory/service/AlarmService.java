@@ -4,10 +4,11 @@ import com.smartfactory.common.response.PageResult;
 import com.smartfactory.dto.AlarmCreateRequest;
 import com.smartfactory.dto.AlarmQueryRequest;
 import com.smartfactory.entity.Alarm;
+import com.smartfactory.vo.AlarmProcessResponse;
 
 public interface AlarmService {
 
-    Alarm create(AlarmCreateRequest request);
+    AlarmProcessResponse processEvent(AlarmCreateRequest request);
 
     PageResult<Alarm> findPage(AlarmQueryRequest request);
 

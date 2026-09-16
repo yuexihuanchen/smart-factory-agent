@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.smartfactory.mapper.AlarmEventMapper">
+
+    <resultMap id="AlarmEventResultMap"
+               type="com.smartfactory.entity.AlarmEvent">
+
+        <id property="id"
+            column="id"/>
+
+        <result property="source"
+                column="source"/>
+
+        <result property="eventId"
+                column="event_id"/>
+
+        <result property="deviceId"
+                column="device_id"/>
+
+        <result property="alarmCode"
+                column="alarm_code"/>
+
+        <result property="occurredAt"
+                column="occurred_at"/>
+
+        <result property="alarmId"
+                column="alarm_id"/>
+
+        <result property="payload"
+                column="payload"/>
+
+        <result property="createdAt"
+                column="created_at"/>
+
+    </resultMap>
+
+    <sql id="AlarmEventColumns">
+        id,
+        source,
+        event_id,
+        device_id,
+        alarm_code,
+        occurred_at,
+        alarm_id,
+        payload,
+        created_at
+    </sql>
+
+    <select id="findBySourceAndEventId"
+            resultMap="AlarmEventResultMap">
+
+        SELECT
+        <include refid="AlarmEventColumns"/>
+        FROM alarm_event
+        WHERE source = #{source}
+          AND event_id = #{eventId}
+        LIMIT 1
+
+    </select>
+
+    <insert id="insert"
+            parameterType="com.smartfactory.entity.AlarmEvent"
+            useGeneratedKeys="true"
+            keyProperty="id">
+
+        INSERT IGNORE INTO alarm_event
+        (
+            source,
+            event_id,
+            device_id,
+            alarm_code,
+            occurred_at,
+            alarm_id,
+            payload
+        )
+        VALUES
+        (
+            #{source},
+            #{eventId},
+            #{deviceId},
+            #{alarmCode},
+            #{occurredAt},
+            #{alarmId},
+            #{payload}
+        )
+
+    </insert>
+
+    <update id="updateAlarmId">
+
+        UPDATE alarm_event
+        SET alarm_id = #{alarmId}
+        WHERE id = #{id}
+
+    </update>
+
+</mapper>

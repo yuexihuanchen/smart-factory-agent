@@ -5,8 +5,10 @@ import com.smartfactory.common.exception.GlobalExceptionHandler;
 import com.smartfactory.common.response.PageResult;
 import com.smartfactory.config.SecurityConfig;
 import com.smartfactory.entity.Alarm;
+import com.smartfactory.enums.AlarmEventStatus;
 import com.smartfactory.security.JwtTokenBlacklistService;
 import com.smartfactory.service.AlarmService;
+import com.smartfactory.vo.AlarmProcessResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -72,24 +74,61 @@ class AlarmControllerSecurityTest {
     @WithMockUser(authorities = "alarm:create")
     void createAlarmAllowedWithAlarmCreate() throws Exception {
 
-        Alarm alarm = alarm();
-        when(alarmService.create(any())).thenReturn(alarm);
+        AlarmProcessResponse response = new AlarmProcessResponse(
+                AlarmEventStatus.CREATED,
+                alarm()
+        );
+        when(alarmService.processEvent(any())).thenReturn(response);
 
         mockMvc.perform(post("/api/alarms")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "source": "EDGE-GATEWAY-01",
+                                  "eventId": "EVT-20260915-0001",
                                   "deviceId": 3,
                                   "alarmCode": "TEMP_HIGH",
                                   "alarmType": "TEMPERATURE",
                                   "alarmLevel": "CRITICAL",
                                   "title": "设备温度过高",
-                                  "message": "温度超过安全阈值"
+                                  "message": "温度超过安全阈值",
+                                  "occurredAt": "2026-09-15T15:30:00"
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.id").value(11));
+                .andExpect(jsonPath("$.data.eventStatus")
+                        .value("CREATED"))
+                .andExpect(jsonPath("$.data.alarm.id").value(11));
+    }
+
+    @Test
+    @WithMockUser(authorities = "alarm:create")
+    void duplicateAlarmEventReturnsDuplicateStatus() throws Exception {
+
+        AlarmProcessResponse response = new AlarmProcessResponse(
+                AlarmEventStatus.DUPLICATE,
+                alarm()
+        );
+        when(alarmService.processEvent(any())).thenReturn(response);
+
+        mockMvc.perform(post("/api/alarms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "EDGE-GATEWAY-01",
+                                  "eventId": "EVT-20260915-0001",
+                                  "deviceId": 3,
+                                  "alarmCode": "TEMP_HIGH",
+                                  "alarmLevel": "CRITICAL",
+                                  "occurredAt": "2026-09-15T15:30:00"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.eventStatus")
+                        .value("DUPLICATE"))
+                .andExpect(jsonPath("$.data.alarm.id").value(11));
     }
 
     @Test
@@ -100,9 +139,12 @@ class AlarmControllerSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "source": "EDGE-GATEWAY-01",
+                                  "eventId": "EVT-20260915-0002",
                                   "deviceId": 3,
                                   "alarmCode": "TEMP_HIGH",
-                                  "alarmLevel": "CRITICAL"
+                                  "alarmLevel": "CRITICAL",
+                                  "occurredAt": "2026-09-15T15:30:00"
                                 }
                                 """))
                 .andExpect(status().isForbidden())
@@ -117,8 +159,11 @@ class AlarmControllerSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "source": "EDGE-GATEWAY-01",
+                                  "eventId": "EVT-20260915-0003",
                                   "deviceId": 3,
-                                  "alarmCode": "TEMP_HIGH"
+                                  "alarmCode": "TEMP_HIGH",
+                                  "occurredAt": "2026-09-15T15:30:00"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -129,16 +174,19 @@ class AlarmControllerSecurityTest {
     @WithMockUser(authorities = "alarm:create")
     void createAlarmReturnsNotFoundWhenDeviceDoesNotExist() throws Exception {
 
-        when(alarmService.create(any()))
+        when(alarmService.processEvent(any()))
                 .thenThrow(new BusinessException(40401, "设备不存在"));
 
         mockMvc.perform(post("/api/alarms")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
+                                  "source": "EDGE-GATEWAY-01",
+                                  "eventId": "EVT-20260915-0004",
                                   "deviceId": 999,
                                   "alarmCode": "TEMP_HIGH",
-                                  "alarmLevel": "CRITICAL"
+                                  "alarmLevel": "CRITICAL",
+                                  "occurredAt": "2026-09-15T15:30:00"
                                 }
                                 """))
                 .andExpect(status().isNotFound())

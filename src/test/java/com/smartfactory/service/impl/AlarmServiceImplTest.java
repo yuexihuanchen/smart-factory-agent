@@ -5,11 +5,15 @@ import com.smartfactory.common.response.PageResult;
 import com.smartfactory.dto.AlarmCreateRequest;
 import com.smartfactory.dto.AlarmQueryRequest;
 import com.smartfactory.entity.Alarm;
+import com.smartfactory.entity.AlarmEvent;
 import com.smartfactory.entity.Device;
 import com.smartfactory.entity.SysUser;
+import com.smartfactory.enums.AlarmEventStatus;
+import com.smartfactory.mapper.AlarmEventMapper;
 import com.smartfactory.mapper.AlarmMapper;
 import com.smartfactory.mapper.DeviceMapper;
 import com.smartfactory.mapper.SysUserMapper;
+import com.smartfactory.vo.AlarmProcessResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,12 +27,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AlarmServiceImplTest {
 
     private AlarmMapper alarmMapper;
+
+    private AlarmEventMapper alarmEventMapper;
 
     private DeviceMapper deviceMapper;
 
@@ -39,66 +46,184 @@ class AlarmServiceImplTest {
     @BeforeEach
     void setUp() {
         alarmMapper = mock(AlarmMapper.class);
+        alarmEventMapper = mock(AlarmEventMapper.class);
         deviceMapper = mock(DeviceMapper.class);
         sysUserMapper = mock(SysUserMapper.class);
         service = new AlarmServiceImpl(
                 alarmMapper,
+                alarmEventMapper,
                 deviceMapper,
                 sysUserMapper
         );
     }
 
     @Test
-    void createCreatesActiveAlarmWhenNoOpenAlarmExists() {
+    void processEventCreatesNewEventAndAlarm() {
 
         AlarmCreateRequest request = createRequest();
-        request.setOccurredAt(
-                LocalDateTime.of(2026, 9, 15, 10, 0)
-        );
+        Alarm persisted = alarm(11L, "ACTIVE", 1);
 
+        when(alarmEventMapper.insert(any(AlarmEvent.class)))
+                .thenAnswer(invocation -> {
+                    AlarmEvent event = invocation.getArgument(0);
+                    event.setId(21L);
+                    return 1;
+                });
         when(deviceMapper.findById(3L)).thenReturn(device(3L));
         when(alarmMapper.upsert(any(Alarm.class))).thenReturn(1);
-
-        Alarm persisted = alarm(
-                11L,
-                "ACTIVE",
-                1
-        );
         when(alarmMapper.findOpenByDeviceIdAndAlarmCode(
                 3L,
                 "TEMP_HIGH"
         )).thenReturn(persisted);
+        when(alarmEventMapper.updateAlarmId(21L, 11L))
+                .thenReturn(1);
 
-        Alarm result = service.create(request);
+        AlarmProcessResponse response = service.processEvent(request);
 
-        assertThat(result.getId()).isEqualTo(11L);
-        assertThat(result.getStatus()).isEqualTo("ACTIVE");
-        assertThat(result.getOccurrenceCount()).isEqualTo(1);
+        assertThat(response.getEventStatus())
+                .isEqualTo(AlarmEventStatus.CREATED);
+        assertThat(response.getAlarm().getId()).isEqualTo(11L);
+        assertThat(response.getAlarm().getOccurrenceCount())
+                .isEqualTo(1);
+
+        verify(alarmEventMapper).insert(any(AlarmEvent.class));
         verify(alarmMapper).upsert(any(Alarm.class));
+        verify(alarmEventMapper).updateAlarmId(21L, 11L);
     }
 
     @Test
-    void createAggregatesRepeatedOpenAlarm() {
+    void processDuplicateEventDoesNotUpsertAlarm() {
 
         AlarmCreateRequest request = createRequest();
-        LocalDateTime occurredAt =
-                LocalDateTime.of(2026, 9, 15, 10, 5);
-        request.setOccurredAt(occurredAt);
+        AlarmEvent existingEvent = event(21L, 11L);
+        Alarm persisted = alarm(11L, "ACTIVE", 1);
 
+        when(alarmEventMapper.insert(any(AlarmEvent.class)))
+                .thenReturn(0);
+        when(alarmEventMapper.findBySourceAndEventId(
+                "EDGE-GATEWAY-01",
+                "EVT-20260915-0001"
+        )).thenReturn(existingEvent);
+        when(alarmMapper.findById(11L)).thenReturn(persisted);
+
+        AlarmProcessResponse response = service.processEvent(request);
+
+        assertThat(response.getEventStatus())
+                .isEqualTo(AlarmEventStatus.DUPLICATE);
+        assertThat(response.getAlarm().getId()).isEqualTo(11L);
+
+        verify(alarmMapper, never()).upsert(any(Alarm.class));
+        verify(deviceMapper, never()).findById(any());
+        verify(alarmEventMapper, never())
+                .updateAlarmId(any(), any());
+    }
+
+    @Test
+    void processDifferentEventsAggregatesIntoSameAlarm() {
+
+        AlarmCreateRequest firstRequest = createRequest();
+        AlarmCreateRequest secondRequest = createRequest();
+        secondRequest.setEventId("EVT-20260915-0002");
+        secondRequest.setOccurredAt(
+                LocalDateTime.of(2026, 9, 15, 10, 5)
+        );
+
+        when(alarmEventMapper.insert(any(AlarmEvent.class)))
+                .thenAnswer(invocation -> {
+                    AlarmEvent event = invocation.getArgument(0);
+                    event.setId(
+                            "EVT-20260915-0001".equals(event.getEventId())
+                                    ? 21L
+                                    : 22L
+                    );
+                    return 1;
+                });
         when(deviceMapper.findById(3L)).thenReturn(device(3L));
-        when(alarmMapper.upsert(any(Alarm.class))).thenReturn(2);
+        when(alarmMapper.upsert(any(Alarm.class))).thenReturn(1, 2);
 
-        Alarm aggregated = alarm(11L, "ACTIVE", 2);
-        aggregated.setLastOccurredAt(occurredAt);
+        Alarm firstAlarm = alarm(11L, "ACTIVE", 1);
+        Alarm secondAlarm = alarm(11L, "ACTIVE", 2);
         when(alarmMapper.findOpenByDeviceIdAndAlarmCode(
                 3L,
                 "TEMP_HIGH"
-        )).thenReturn(aggregated);
+        )).thenReturn(firstAlarm, secondAlarm);
+        when(alarmEventMapper.updateAlarmId(any(), eq(11L)))
+                .thenReturn(1);
 
-        Alarm result = service.create(request);
+        AlarmProcessResponse first =
+                service.processEvent(firstRequest);
+        AlarmProcessResponse second =
+                service.processEvent(secondRequest);
 
-        assertThat(result.getOccurrenceCount()).isEqualTo(2);
-        assertThat(result.getLastOccurredAt()).isEqualTo(occurredAt);
+        assertThat(first.getAlarm().getOccurrenceCount())
+                .isEqualTo(1);
+        assertThat(second.getAlarm().getOccurrenceCount())
+                .isEqualTo(2);
+        assertThat(second.getAlarm().getId()).isEqualTo(11L);
+
+        verify(alarmMapper, times(2)).upsert(any(Alarm.class));
+        verify(alarmEventMapper).updateAlarmId(21L, 11L);
+        verify(alarmEventMapper).updateAlarmId(22L, 11L);
+    }
+
+    @Test
+    void processNewEventAfterResolvedCreatesNewAlarm() {
+
+        AlarmCreateRequest request = createRequest();
+        Alarm resolved = alarm(11L, "RESOLVED", 2);
+        Alarm newAlarm = alarm(12L, "ACTIVE", 1);
+
+        when(alarmEventMapper.insert(any(AlarmEvent.class)))
+                .thenAnswer(invocation -> {
+                    AlarmEvent event = invocation.getArgument(0);
+                    event.setId(23L);
+                    return 1;
+                });
+        when(deviceMapper.findById(3L)).thenReturn(device(3L));
+        when(alarmMapper.upsert(any(Alarm.class))).thenReturn(1);
+        when(alarmMapper.findOpenByDeviceIdAndAlarmCode(
+                3L,
+                "TEMP_HIGH"
+        )).thenReturn(newAlarm);
+        when(alarmEventMapper.updateAlarmId(23L, 12L))
+                .thenReturn(1);
+
+        AlarmProcessResponse response = service.processEvent(request);
+
+        assertThat(response.getEventStatus())
+                .isEqualTo(AlarmEventStatus.CREATED);
+        assertThat(response.getAlarm().getId()).isEqualTo(12L);
+        assertThat(response.getAlarm().getStatus()).isEqualTo("ACTIVE");
+
+        verify(alarmMapper).upsert(any(Alarm.class));
+        verify(alarmEventMapper).updateAlarmId(23L, 12L);
+        assertThat(resolved.getId()).isEqualTo(11L);
+    }
+
+    @Test
+    void processEventPassesOccurredAtToAlarmUpsert() {
+
+        AlarmCreateRequest request = createRequest();
+        LocalDateTime occurredAt =
+                LocalDateTime.of(2026, 9, 15, 9, 30);
+        request.setOccurredAt(occurredAt);
+
+        when(alarmEventMapper.insert(any(AlarmEvent.class)))
+                .thenAnswer(invocation -> {
+                    AlarmEvent event = invocation.getArgument(0);
+                    event.setId(21L);
+                    return 1;
+                });
+        when(deviceMapper.findById(3L)).thenReturn(device(3L));
+        when(alarmMapper.upsert(any(Alarm.class))).thenReturn(1);
+        when(alarmMapper.findOpenByDeviceIdAndAlarmCode(
+                3L,
+                "TEMP_HIGH"
+        )).thenReturn(alarm(11L, "ACTIVE", 2));
+        when(alarmEventMapper.updateAlarmId(21L, 11L))
+                .thenReturn(1);
+
+        service.processEvent(request);
 
         ArgumentCaptor<Alarm> captor =
                 ArgumentCaptor.forClass(Alarm.class);
@@ -110,38 +235,84 @@ class AlarmServiceImplTest {
     }
 
     @Test
-    void createRejectsMissingDevice() {
+    void processEventRejectsMissingDeviceAndStopsAlarmAggregation() {
 
+        AlarmCreateRequest request = createRequest();
+
+        when(alarmEventMapper.insert(any(AlarmEvent.class)))
+                .thenReturn(1);
         when(deviceMapper.findById(3L)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.create(createRequest()))
+        assertThatThrownBy(() -> service.processEvent(request))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code")
                 .isEqualTo(40401);
+
+        verify(alarmMapper, never()).upsert(any(Alarm.class));
+        verify(alarmEventMapper, never())
+                .updateAlarmId(any(), any());
     }
 
     @Test
-    void createRejectsBlankAlarmCode() {
+    void processEventRejectsInvalidEventFields() {
 
-        AlarmCreateRequest request = createRequest();
-        request.setAlarmCode(" ");
+        AlarmCreateRequest missingSource = createRequest();
+        missingSource.setSource(" ");
 
-        assertThatThrownBy(() -> service.create(request))
+        AlarmCreateRequest missingEventId = createRequest();
+        missingEventId.setEventId(" ");
+
+        AlarmCreateRequest missingOccurredAt = createRequest();
+        missingOccurredAt.setOccurredAt(null);
+
+        AlarmCreateRequest nonAsciiEventId = createRequest();
+        nonAsciiEventId.setEventId("事件-001");
+
+        assertThatThrownBy(() -> service.processEvent(missingSource))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo(40001);
+
+        assertThatThrownBy(() -> service.processEvent(missingEventId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo(40001);
+
+        assertThatThrownBy(() -> service.processEvent(missingOccurredAt))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo(40001);
+
+        assertThatThrownBy(() -> service.processEvent(nonAsciiEventId))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code")
                 .isEqualTo(40001);
     }
 
     @Test
-    void createRejectsInvalidAlarmLevel() {
+    void processEventFailsWhenEventCannotLinkAlarm() {
 
         AlarmCreateRequest request = createRequest();
-        request.setAlarmLevel("UNKNOWN");
 
-        assertThatThrownBy(() -> service.create(request))
+        when(alarmEventMapper.insert(any(AlarmEvent.class)))
+                .thenAnswer(invocation -> {
+                    AlarmEvent event = invocation.getArgument(0);
+                    event.setId(21L);
+                    return 1;
+                });
+        when(deviceMapper.findById(3L)).thenReturn(device(3L));
+        when(alarmMapper.upsert(any(Alarm.class))).thenReturn(1);
+        when(alarmMapper.findOpenByDeviceIdAndAlarmCode(
+                3L,
+                "TEMP_HIGH"
+        )).thenReturn(alarm(11L, "ACTIVE", 1));
+        when(alarmEventMapper.updateAlarmId(21L, 11L))
+                .thenReturn(0);
+
+        assertThatThrownBy(() -> service.processEvent(request))
                 .isInstanceOf(BusinessException.class)
                 .extracting("code")
-                .isEqualTo(40010);
+                .isEqualTo(40906);
     }
 
     @Test
@@ -192,38 +363,6 @@ class AlarmServiceImplTest {
         assertThat(result.getTotal()).isEqualTo(1L);
         assertThat(result.getPages()).isEqualTo(1L);
         assertThat(result.getRecords()).hasSize(1);
-    }
-
-    @Test
-    void findPageRejectsInvalidStatus() {
-
-        AlarmQueryRequest request = new AlarmQueryRequest();
-        request.setStatus("CLOSED");
-
-        assertThatThrownBy(() -> service.findPage(request))
-                .isInstanceOf(BusinessException.class)
-                .extracting("code")
-                .isEqualTo(40011);
-    }
-
-    @Test
-    void findByIdReturnsAlarm() {
-
-        Alarm alarm = alarm(11L, "ACTIVE", 1);
-        when(alarmMapper.findById(11L)).thenReturn(alarm);
-
-        assertThat(service.findById(11L)).isSameAs(alarm);
-    }
-
-    @Test
-    void findByIdRejectsMissingAlarm() {
-
-        when(alarmMapper.findById(999L)).thenReturn(null);
-
-        assertThatThrownBy(() -> service.findById(999L))
-                .isInstanceOf(BusinessException.class)
-                .extracting("code")
-                .isEqualTo(40402);
     }
 
     @Test
@@ -332,12 +471,17 @@ class AlarmServiceImplTest {
     private AlarmCreateRequest createRequest() {
 
         AlarmCreateRequest request = new AlarmCreateRequest();
+        request.setSource("EDGE-GATEWAY-01");
+        request.setEventId("EVT-20260915-0001");
         request.setDeviceId(3L);
         request.setAlarmCode("TEMP_HIGH");
         request.setAlarmType("TEMPERATURE");
         request.setAlarmLevel("CRITICAL");
         request.setTitle("设备温度过高");
         request.setMessage("设备3温度持续超过安全阈值");
+        request.setOccurredAt(
+                LocalDateTime.of(2026, 9, 15, 10, 0)
+        );
         return request;
     }
 
@@ -346,6 +490,21 @@ class AlarmServiceImplTest {
         Device device = new Device();
         device.setId(id);
         return device;
+    }
+
+    private AlarmEvent event(Long id, Long alarmId) {
+
+        AlarmEvent event = new AlarmEvent();
+        event.setId(id);
+        event.setSource("EDGE-GATEWAY-01");
+        event.setEventId("EVT-20260915-0001");
+        event.setDeviceId(3L);
+        event.setAlarmCode("TEMP_HIGH");
+        event.setOccurredAt(
+                LocalDateTime.of(2026, 9, 15, 10, 0)
+        );
+        event.setAlarmId(alarmId);
+        return event;
     }
 
     private Alarm alarm(

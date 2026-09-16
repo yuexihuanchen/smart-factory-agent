@@ -5,14 +5,18 @@ import com.smartfactory.common.response.PageResult;
 import com.smartfactory.dto.AlarmCreateRequest;
 import com.smartfactory.dto.AlarmQueryRequest;
 import com.smartfactory.entity.Alarm;
+import com.smartfactory.entity.AlarmEvent;
 import com.smartfactory.entity.Device;
 import com.smartfactory.entity.SysUser;
+import com.smartfactory.enums.AlarmEventStatus;
 import com.smartfactory.enums.AlarmLevel;
 import com.smartfactory.enums.AlarmStatus;
+import com.smartfactory.mapper.AlarmEventMapper;
 import com.smartfactory.mapper.AlarmMapper;
 import com.smartfactory.mapper.DeviceMapper;
 import com.smartfactory.mapper.SysUserMapper;
 import com.smartfactory.service.AlarmService;
+import com.smartfactory.vo.AlarmProcessResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,15 +30,24 @@ public class AlarmServiceImpl implements AlarmService {
 
     private final AlarmMapper alarmMapper;
 
+    private final AlarmEventMapper alarmEventMapper;
+
     private final DeviceMapper deviceMapper;
 
     private final SysUserMapper sysUserMapper;
 
     @Override
     @Transactional
-    public Alarm create(AlarmCreateRequest request) {
+    public AlarmProcessResponse processEvent(AlarmCreateRequest request) {
 
-        validateCreateRequest(request);
+        validateEventRequest(request);
+
+        AlarmEvent event = buildAlarmEvent(request);
+        int inserted = alarmEventMapper.insert(event);
+
+        if (inserted == 0) {
+            return handleDuplicateEvent(request);
+        }
 
         Device device = deviceMapper.findById(request.getDeviceId());
 
@@ -44,16 +57,51 @@ public class AlarmServiceImpl implements AlarmService {
 
         alarmMapper.upsert(buildNewAlarm(request));
 
-        Alarm alarm = alarmMapper.findOpenByDeviceIdAndAlarmCode(
-                request.getDeviceId(),
-                request.getAlarmCode()
+        Alarm alarm = requireOpenAlarm(request);
+
+        int rows = alarmEventMapper.updateAlarmId(
+                event.getId(),
+                alarm.getId()
         );
 
-        if (alarm == null) {
-            throw new BusinessException(40905, "告警聚合失败，请重试");
+        if (rows == 0) {
+            throw new BusinessException(40906, "关联告警事件失败");
         }
 
-        return alarm;
+        return new AlarmProcessResponse(
+                AlarmEventStatus.CREATED,
+                alarm
+        );
+    }
+
+    private AlarmProcessResponse handleDuplicateEvent(
+            AlarmCreateRequest request) {
+
+        AlarmEvent event = alarmEventMapper.findBySourceAndEventId(
+                request.getSource(),
+                request.getEventId()
+        );
+
+        if (event == null || event.getAlarmId() == null) {
+            throw new BusinessException(
+                    40905,
+                    "重复事件关联告警不存在"
+            );
+        }
+
+        Alarm alarm = alarmMapper.findById(event.getAlarmId());
+
+        if (alarm == null) {
+            throw new BusinessException(
+                    40905,
+                    "重复事件关联告警不存在"
+            );
+        }
+
+        return new AlarmProcessResponse(
+                AlarmEventStatus.DUPLICATE,
+                alarm
+        );
     }
 
     @Override
@@ -174,11 +222,35 @@ public class AlarmServiceImpl implements AlarmService {
         return requireAlarm(id);
     }
 
-    private void validateCreateRequest(AlarmCreateRequest request) {
+    private void validateEventRequest(AlarmCreateRequest request) {
+
+        if (request.getDeviceId() == null
+                || request.getDeviceId() <= 0) {
+            throw new BusinessException(40001, "设备ID必须大于0");
+        }
+
+        if (request.getSource() == null
+                || request.getSource().isBlank()
+                || request.getSource().length() > 64
+                || !isAscii(request.getSource())) {
+            throw new BusinessException(40001, "事件来源非法");
+        }
+
+        if (request.getEventId() == null
+                || request.getEventId().isBlank()
+                || request.getEventId().length() > 128
+                || !isAscii(request.getEventId())) {
+            throw new BusinessException(40001, "事件ID非法");
+        }
 
         if (request.getAlarmCode() == null
-                || request.getAlarmCode().isBlank()) {
+                || request.getAlarmCode().isBlank()
+                || request.getAlarmCode().length() > 64) {
             throw new BusinessException(40001, "告警编码不能为空");
+        }
+
+        if (request.getOccurredAt() == null) {
+            throw new BusinessException(40001, "故障发生时间不能为空");
         }
 
         if (!AlarmLevel.isValid(request.getAlarmLevel())) {
@@ -226,6 +298,37 @@ public class AlarmServiceImpl implements AlarmService {
         alarm.setOccurrenceCount(1);
 
         return alarm;
+    }
+
+    private AlarmEvent buildAlarmEvent(AlarmCreateRequest request) {
+
+        AlarmEvent event = new AlarmEvent();
+
+        event.setSource(request.getSource());
+        event.setEventId(request.getEventId());
+        event.setDeviceId(request.getDeviceId());
+        event.setAlarmCode(request.getAlarmCode());
+        event.setOccurredAt(request.getOccurredAt());
+
+        return event;
+    }
+
+    private Alarm requireOpenAlarm(AlarmCreateRequest request) {
+
+        Alarm alarm = alarmMapper.findOpenByDeviceIdAndAlarmCode(
+                request.getDeviceId(),
+                request.getAlarmCode()
+        );
+
+        if (alarm == null) {
+            throw new BusinessException(40905, "告警聚合失败，请重试");
+        }
+
+        return alarm;
+    }
+
+    private boolean isAscii(String value) {
+        return value.chars().allMatch(character -> character <= 0x7F);
     }
 
     private Alarm requireAlarm(Long id) {
