@@ -6,17 +6,20 @@ import com.smartfactory.dto.AlarmQueryRequest;
 import com.smartfactory.entity.Alarm;
 import com.smartfactory.entity.AlarmEvent;
 import com.smartfactory.entity.Device;
+import com.smartfactory.entity.OutboxEvent;
 import com.smartfactory.entity.SysUser;
 import com.smartfactory.enums.AlarmEventStatus;
 import com.smartfactory.mapper.AlarmEventMapper;
 import com.smartfactory.mapper.AlarmMapper;
 import com.smartfactory.mapper.DeviceMapper;
+import com.smartfactory.mapper.OutboxEventMapper;
 import com.smartfactory.mapper.SysUserMapper;
 import com.smartfactory.service.command.AlarmEventCommand;
 import com.smartfactory.vo.AlarmProcessResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -37,6 +40,8 @@ class AlarmServiceImplTest {
 
     private AlarmEventMapper alarmEventMapper;
 
+    private OutboxEventMapper outboxEventMapper;
+
     private DeviceMapper deviceMapper;
 
     private SysUserMapper sysUserMapper;
@@ -47,13 +52,16 @@ class AlarmServiceImplTest {
     void setUp() {
         alarmMapper = mock(AlarmMapper.class);
         alarmEventMapper = mock(AlarmEventMapper.class);
+        outboxEventMapper = mock(OutboxEventMapper.class);
         deviceMapper = mock(DeviceMapper.class);
         sysUserMapper = mock(SysUserMapper.class);
         service = new AlarmServiceImpl(
                 alarmMapper,
                 alarmEventMapper,
+                outboxEventMapper,
                 deviceMapper,
-                sysUserMapper
+                sysUserMapper,
+                JsonMapper.builder().build()
         );
     }
 
@@ -93,6 +101,16 @@ class AlarmServiceImplTest {
                 .isEqualTo("{\"temperature\":95}");
         verify(alarmMapper).upsert(any(Alarm.class));
         verify(alarmEventMapper).updateAlarmId(21L, 11L);
+
+        ArgumentCaptor<OutboxEvent> outboxCaptor =
+                ArgumentCaptor.forClass(OutboxEvent.class);
+        verify(outboxEventMapper).insert(outboxCaptor.capture());
+        assertThat(outboxCaptor.getValue().getStatus())
+                .isEqualTo("PENDING");
+        assertThat(outboxCaptor.getValue().getRetryCount())
+                .isZero();
+        assertThat(outboxCaptor.getValue().getPayload())
+                .contains("\"eventId\":\"EVT-20260915-0001\"");
     }
 
     @Test
@@ -120,6 +138,8 @@ class AlarmServiceImplTest {
         verify(deviceMapper, never()).findById(any());
         verify(alarmEventMapper, never())
                 .updateAlarmId(any(), any());
+        verify(outboxEventMapper, never())
+                .insert(any(OutboxEvent.class));
     }
 
     @Test
@@ -255,6 +275,8 @@ class AlarmServiceImplTest {
         verify(alarmMapper, never()).upsert(any(Alarm.class));
         verify(alarmEventMapper, never())
                 .updateAlarmId(any(), any());
+        verify(outboxEventMapper, never())
+                .insert(any(OutboxEvent.class));
     }
 
     @Test
@@ -317,6 +339,9 @@ class AlarmServiceImplTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("code")
                 .isEqualTo(40906);
+
+        verify(outboxEventMapper, never())
+                .insert(any(OutboxEvent.class));
     }
 
     @Test

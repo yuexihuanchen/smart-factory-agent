@@ -2,10 +2,12 @@ package com.smartfactory.service.impl;
 
 import com.smartfactory.common.exception.BusinessException;
 import com.smartfactory.common.response.PageResult;
+import com.smartfactory.config.RabbitMQConfig;
 import com.smartfactory.dto.AlarmQueryRequest;
 import com.smartfactory.entity.Alarm;
 import com.smartfactory.entity.AlarmEvent;
 import com.smartfactory.entity.Device;
+import com.smartfactory.entity.OutboxEvent;
 import com.smartfactory.entity.SysUser;
 import com.smartfactory.enums.AlarmEventStatus;
 import com.smartfactory.enums.AlarmLevel;
@@ -13,13 +15,16 @@ import com.smartfactory.enums.AlarmStatus;
 import com.smartfactory.mapper.AlarmEventMapper;
 import com.smartfactory.mapper.AlarmMapper;
 import com.smartfactory.mapper.DeviceMapper;
+import com.smartfactory.mapper.OutboxEventMapper;
 import com.smartfactory.mapper.SysUserMapper;
+import com.smartfactory.mq.DeviceAlarmEventMessage;
 import com.smartfactory.service.AlarmService;
 import com.smartfactory.service.command.AlarmEventCommand;
 import com.smartfactory.vo.AlarmProcessResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,9 +37,13 @@ public class AlarmServiceImpl implements AlarmService {
 
     private final AlarmEventMapper alarmEventMapper;
 
+    private final OutboxEventMapper outboxEventMapper;
+
     private final DeviceMapper deviceMapper;
 
     private final SysUserMapper sysUserMapper;
+
+    private final JsonMapper jsonMapper;
 
     @Override
     @Transactional
@@ -67,6 +76,8 @@ public class AlarmServiceImpl implements AlarmService {
         if (rows == 0) {
             throw new BusinessException(40906, "关联告警事件失败");
         }
+
+        outboxEventMapper.insert(buildOutboxEvent(command));
 
         return new AlarmProcessResponse(
                 AlarmEventStatus.CREATED,
@@ -312,6 +323,42 @@ public class AlarmServiceImpl implements AlarmService {
         event.setPayload(command.getPayload());
 
         return event;
+    }
+
+    private OutboxEvent buildOutboxEvent(
+            AlarmEventCommand command) {
+
+        DeviceAlarmEventMessage message =
+                new DeviceAlarmEventMessage();
+
+        message.setSource(command.getSource());
+        message.setEventId(command.getEventId());
+        message.setDeviceId(command.getDeviceId());
+        message.setAlarmCode(command.getAlarmCode());
+        message.setAlarmType(command.getAlarmType());
+        message.setAlarmLevel(command.getAlarmLevel());
+        message.setTitle(command.getTitle());
+        message.setMessage(command.getMessage());
+        message.setOccurredAt(command.getOccurredAt());
+        message.setPayload(command.getPayload());
+
+        OutboxEvent outboxEvent = new OutboxEvent();
+
+        outboxEvent.setSource(command.getSource());
+        outboxEvent.setEventId(command.getEventId());
+        outboxEvent.setExchange(RabbitMQConfig.DEVICE_EXCHANGE);
+        outboxEvent.setRoutingKey(
+                RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY
+        );
+        outboxEvent.setPayload(
+                jsonMapper.writeValueAsString(message)
+        );
+        outboxEvent.setStatus("PENDING");
+        outboxEvent.setRetryCount(0);
+        outboxEvent.setPublishedAt(null);
+        outboxEvent.setLastError(null);
+
+        return outboxEvent;
     }
 
     private Alarm requireOpenAlarm(AlarmEventCommand command) {

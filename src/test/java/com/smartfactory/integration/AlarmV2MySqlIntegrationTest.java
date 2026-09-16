@@ -6,6 +6,7 @@ import com.smartfactory.enums.AlarmEventStatus;
 import com.smartfactory.mapper.AlarmEventMapper;
 import com.smartfactory.mapper.AlarmMapper;
 import com.smartfactory.mapper.DeviceMapper;
+import com.smartfactory.mapper.OutboxEventMapper;
 import com.smartfactory.mapper.SysUserMapper;
 import com.smartfactory.service.AlarmService;
 import com.smartfactory.service.command.AlarmEventCommand;
@@ -31,6 +32,7 @@ import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import tools.jackson.databind.json.JsonMapper;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -96,12 +98,14 @@ class AlarmV2MySqlIntegrationTest {
 
         createTestDatabase();
 
+        jdbcTemplate.execute("DROP TABLE IF EXISTS outbox_event");
         jdbcTemplate.execute("DROP TABLE IF EXISTS alarm_event");
         jdbcTemplate.execute("DROP TABLE IF EXISTS alarm");
         jdbcTemplate.execute("DROP TABLE IF EXISTS device");
 
         executeSqlFile("config/schema-alarm.sql");
         executeSqlFile("config/schema-alarm-event.sql");
+        executeSqlFile("config/schema-outbox.sql");
 
         jdbcTemplate.update(
                 """
@@ -540,15 +544,24 @@ class AlarmV2MySqlIntegrationTest {
         AlarmService alarmService(
                 AlarmMapper alarmMapper,
                 AlarmEventMapper alarmEventMapper,
+                OutboxEventMapper outboxEventMapper,
                 DeviceMapper deviceMapper,
-                SysUserMapper sysUserMapper) {
+                SysUserMapper sysUserMapper,
+                JsonMapper jsonMapper) {
 
             return new AlarmServiceImpl(
                     alarmMapper,
                     alarmEventMapper,
+                    outboxEventMapper,
                     deviceMapper,
-                    sysUserMapper
+                    sysUserMapper,
+                    jsonMapper
             );
+        }
+
+        @Bean
+        JsonMapper jsonMapper() {
+            return JsonMapper.builder().build();
         }
     }
 }

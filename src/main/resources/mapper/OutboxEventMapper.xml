@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.smartfactory.mapper.OutboxEventMapper">
+
+    <resultMap id="OutboxEventResultMap"
+               type="com.smartfactory.entity.OutboxEvent">
+
+        <id property="id"
+            column="id"/>
+
+        <result property="source"
+                column="source"/>
+
+        <result property="eventId"
+                column="event_id"/>
+
+        <result property="exchange"
+                column="exchange"/>
+
+        <result property="routingKey"
+                column="routing_key"/>
+
+        <result property="payload"
+                column="payload"/>
+
+        <result property="status"
+                column="status"/>
+
+        <result property="retryCount"
+                column="retry_count"/>
+
+        <result property="createdAt"
+                column="created_at"/>
+
+        <result property="publishedAt"
+                column="published_at"/>
+
+        <result property="lastError"
+                column="last_error"/>
+
+    </resultMap>
+
+    <sql id="OutboxEventColumns">
+        id,
+        source,
+        event_id,
+        exchange,
+        routing_key,
+        payload,
+        status,
+        retry_count,
+        created_at,
+        published_at,
+        last_error
+    </sql>
+
+    <insert id="insert"
+            parameterType="com.smartfactory.entity.OutboxEvent"
+            useGeneratedKeys="true"
+            keyProperty="id">
+
+        INSERT INTO outbox_event
+        (
+            source,
+            event_id,
+            exchange,
+            routing_key,
+            payload,
+            status,
+            retry_count,
+            published_at,
+            last_error
+        )
+        VALUES
+        (
+            #{source},
+            #{eventId},
+            #{exchange},
+            #{routingKey},
+            #{payload},
+            #{status},
+            #{retryCount},
+            #{publishedAt},
+            #{lastError}
+        )
+
+    </insert>
+
+    <select id="findBySourceAndEventId"
+            resultMap="OutboxEventResultMap">
+
+        SELECT
+        <include refid="OutboxEventColumns"/>
+        FROM outbox_event
+        WHERE source = #{source}
+          AND event_id = #{eventId}
+        LIMIT 1
+
+    </select>
+
+</mapper>
