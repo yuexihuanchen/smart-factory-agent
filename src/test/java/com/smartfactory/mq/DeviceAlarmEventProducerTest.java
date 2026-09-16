@@ -2,10 +2,15 @@ package com.smartfactory.mq;
 
 import com.smartfactory.config.RabbitMQConfig;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.amqp.core.MessagePostProcessor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.time.LocalDateTime;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -19,13 +24,26 @@ class DeviceAlarmEventProducerTest {
                 new DeviceAlarmEventProducer(rabbitTemplate);
         DeviceAlarmEventMessage message = message();
 
-        producer.send(message);
+        DeviceAlarmCorrelationData correlationData =
+                producer.send(message);
 
+        ArgumentCaptor<DeviceAlarmCorrelationData> captor =
+                ArgumentCaptor.forClass(
+                        DeviceAlarmCorrelationData.class
+                );
         verify(rabbitTemplate).convertAndSend(
-                RabbitMQConfig.DEVICE_EXCHANGE,
-                RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY,
-                message
+                eq(RabbitMQConfig.DEVICE_EXCHANGE),
+                eq(RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY),
+                eq(message),
+                any(MessagePostProcessor.class),
+                captor.capture()
         );
+
+        assertThat(captor.getValue()).isSameAs(correlationData);
+        assertThat(correlationData.getSource())
+                .isEqualTo("gateway-A");
+        assertThat(correlationData.getEventId())
+                .isEqualTo("EVT-RMQ-001");
     }
 
     private DeviceAlarmEventMessage message() {

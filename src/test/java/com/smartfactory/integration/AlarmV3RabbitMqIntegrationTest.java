@@ -3,10 +3,12 @@ package com.smartfactory.integration;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mysql.cj.jdbc.MysqlDataSource;
+import com.rabbitmq.client.GetResponse;
 import com.smartfactory.common.exception.BusinessException;
 import com.smartfactory.common.exception.TransientAlarmException;
 import com.smartfactory.config.RabbitMQConfig;
 import com.smartfactory.config.RabbitMQMessageConfig;
+import com.smartfactory.config.RabbitMQPublisherConfig;
 import com.smartfactory.entity.Alarm;
 import com.smartfactory.enums.AlarmEventStatus;
 import com.smartfactory.mapper.AlarmEventMapper;
@@ -14,6 +16,7 @@ import com.smartfactory.mapper.AlarmMapper;
 import com.smartfactory.mapper.DeviceMapper;
 import com.smartfactory.mapper.SysUserMapper;
 import com.smartfactory.mq.DeviceAlarmEventConsumer;
+import com.smartfactory.mq.DeviceAlarmCorrelationData;
 import com.smartfactory.mq.DeviceAlarmEventMessage;
 import com.smartfactory.mq.DeviceAlarmEventProducer;
 import com.smartfactory.service.AlarmService;
@@ -35,6 +38,8 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageListenerContainer;
+import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.core.ReturnedMessage;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
@@ -47,6 +52,7 @@ import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.amqp.autoconfigure.RabbitTemplateCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -303,7 +309,14 @@ class AlarmV3RabbitMqIntegrationTest {
                 LocalDateTime.of(2026, 9, 16, 10, 0)
         );
 
-        producer.send(message);
+        DeviceAlarmCorrelationData correlationData =
+                producer.send(message);
+
+        waitUntil(
+                () -> confirmAcknowledged(correlationData),
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
 
         waitUntil(
                 () -> queueMessageCount(
@@ -316,6 +329,7 @@ class AlarmV3RabbitMqIntegrationTest {
         assertThat(queueMessageCount(
                 RabbitMQConfig.DEVICE_ALARM_QUEUE
         )).isEqualTo(1);
+        assertThat(correlationData.getReturned()).isNull();
 
         startAlarmListener();
 
@@ -327,6 +341,99 @@ class AlarmV3RabbitMqIntegrationTest {
                 WAIT_TIMEOUT,
                 this::diagnostics
         );
+    }
+
+    @Test
+    void unroutableMessageIsReturnedAndNotQueued()
+            throws Exception {
+
+        stopAlarmListener();
+        resetQueue();
+
+        waitUntil(
+                () -> queueMessageCount(
+                        RabbitMQConfig.DEVICE_ALARM_QUEUE
+                ) == 0
+                        && queueMessageCount(
+                                RabbitMQConfig.DEVICE_ALARM_DLQ
+                        ) == 0,
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+
+        DeviceAlarmEventMessage message = message(
+                "EVT-RETURN-" + UUID.randomUUID(),
+                LocalDateTime.of(2026, 9, 16, 10, 0)
+        );
+
+        DeviceAlarmCorrelationData correlationData = producer.send(
+                RabbitMQConfig.DEVICE_EXCHANGE,
+                "device.alarm.invalid",
+                message
+        );
+
+        waitUntil(
+                () -> correlationData.getFuture().isDone()
+                        && correlationData.getReturned() != null,
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+
+        ReturnedMessage returned = correlationData.getReturned();
+
+        assertThat(correlationData.getFuture().get().ack())
+                .isTrue();
+        assertThat(returned.getExchange())
+                .isEqualTo(RabbitMQConfig.DEVICE_EXCHANGE);
+        assertThat(returned.getRoutingKey())
+                .isEqualTo("device.alarm.invalid");
+        Object sourceHeader = returned.getMessage()
+                .getMessageProperties()
+                .getHeader("alarm.source");
+        Object eventIdHeader = returned.getMessage()
+                .getMessageProperties()
+                .getHeader("alarm.eventId");
+
+        assertThat(sourceHeader)
+                .isEqualTo(message.getSource());
+        assertThat(eventIdHeader)
+                .isEqualTo(message.getEventId());
+        assertThat(queueMessageCount(
+                RabbitMQConfig.DEVICE_ALARM_QUEUE
+        )).isZero();
+        assertThat(queueMessageCount(
+                RabbitMQConfig.DEVICE_ALARM_DLQ
+        )).isZero();
+    }
+
+    @Test
+    void correlationDataIdentifiesOriginalAlarmEvent()
+            throws Exception {
+
+        DeviceAlarmEventMessage message = message(
+                "EVT-V3-001",
+                LocalDateTime.of(2026, 9, 16, 10, 0)
+        );
+        message.setSource("gateway-A");
+
+        DeviceAlarmCorrelationData correlationData =
+                producer.send(message);
+
+        waitUntil(
+                () -> confirmAcknowledged(correlationData),
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+
+        assertThat(correlationData.getSource())
+                .isEqualTo("gateway-A");
+        assertThat(correlationData.getEventId())
+                .isEqualTo("EVT-V3-001");
+        assertThat(correlationData.getExchange())
+                .isEqualTo(RabbitMQConfig.DEVICE_EXCHANGE);
+        assertThat(correlationData.getRoutingKey())
+                .isEqualTo(RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY);
+        assertThat(correlationData.getReturned()).isNull();
     }
 
     @Test
@@ -799,10 +906,28 @@ class AlarmV3RabbitMqIntegrationTest {
     private DeviceAlarmEventMessage receiveDlqMessage()
             throws Exception {
 
-        Message rawMessage = rabbitTemplate.receive(
-                RabbitMQConfig.DEVICE_ALARM_DLQ,
-                10_000
-        );
+        Message rawMessage = rabbitTemplate.execute(channel -> {
+            GetResponse response = channel.basicGet(
+                    RabbitMQConfig.DEVICE_ALARM_DLQ,
+                    false
+            );
+
+            if (response == null) {
+                return null;
+            }
+
+            Message message = new Message(
+                    response.getBody(),
+                    new MessageProperties()
+            );
+
+            channel.basicAck(
+                    response.getEnvelope().getDeliveryTag(),
+                    false
+            );
+
+            return message;
+        });
 
         assertThat(rawMessage).isNotNull();
 
@@ -960,6 +1085,20 @@ class AlarmV3RabbitMqIntegrationTest {
         return Boolean.TRUE.equals(result);
     }
 
+    private boolean confirmAcknowledged(
+            DeviceAlarmCorrelationData correlationData) {
+
+        if (!correlationData.getFuture().isDone()) {
+            return false;
+        }
+
+        try {
+            return correlationData.getFuture().get().ack();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private long count(String sql, Object... arguments) {
 
         Long result = jdbcTemplate.queryForObject(
@@ -973,13 +1112,13 @@ class AlarmV3RabbitMqIntegrationTest {
 
     private long queueMessageCount(String queueName) {
 
-        JsonNode queue = managementClient().getQueue(queueName);
+        Long count = rabbitTemplate.execute(channel ->
+                (long) channel
+                        .queueDeclarePassive(queueName)
+                        .getMessageCount()
+        );
 
-        if (queue == null) {
-            return -1L;
-        }
-
-        return queue.path("messages").asLong();
+        return count == null ? -1L : count;
     }
 
     private Throwable rootCause(Throwable throwable) {
@@ -1341,7 +1480,8 @@ class AlarmV3RabbitMqIntegrationTest {
     @MapperScan("com.smartfactory.mapper")
     @Import({
             RabbitMQConfig.class,
-            RabbitMQMessageConfig.class
+            RabbitMQMessageConfig.class,
+            RabbitMQPublisherConfig.class
     })
     static class TestConfiguration {
 
@@ -1403,6 +1543,10 @@ class AlarmV3RabbitMqIntegrationTest {
             connectionFactory.setUsername(RABBITMQ_USERNAME);
             connectionFactory.setPassword(RABBITMQ_PASSWORD);
             connectionFactory.setVirtualHost(TEST_VHOST);
+            connectionFactory.setPublisherConfirmType(
+                    CachingConnectionFactory.ConfirmType.CORRELATED
+            );
+            connectionFactory.setPublisherReturns(true);
             return connectionFactory;
         }
 
@@ -1419,11 +1563,13 @@ class AlarmV3RabbitMqIntegrationTest {
         @Bean
         RabbitTemplate rabbitTemplate(
                 ConnectionFactory rabbitConnectionFactory,
-                JacksonJsonMessageConverter converter) {
+                JacksonJsonMessageConverter converter,
+                RabbitTemplateCustomizer publisherCustomizer) {
 
             RabbitTemplate rabbitTemplate =
                     new RabbitTemplate(rabbitConnectionFactory);
             rabbitTemplate.setMessageConverter(converter);
+            publisherCustomizer.customize(rabbitTemplate);
             return rabbitTemplate;
         }
 
