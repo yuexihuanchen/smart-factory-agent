@@ -662,6 +662,105 @@ class AlarmV3RabbitMqIntegrationTest {
     }
 
     @Test
+    void outboxPublisherReclaimsExpiredProcessing()
+            throws Exception {
+
+        stopAlarmListener();
+        resetQueue();
+
+        DeviceAlarmEventMessage message = message(
+                "EVT-OUTBOX-RECLAIM-" + UUID.randomUUID(),
+                LocalDateTime.of(2026, 9, 20, 10, 0)
+        );
+        OutboxEvent outbox = insertPendingOutbox(
+                message,
+                RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY
+        );
+
+        LocalDateTime expiredNow =
+                LocalDateTime.now().minusSeconds(60).withNano(0);
+
+        assertThat(outboxEventMapper.claim(
+                outbox.getId(),
+                "crashed-owner",
+                expiredNow.minusSeconds(1),
+                expiredNow
+        )).isEqualTo(1);
+        assertThat(outboxLeaseOwner(outbox.getId()))
+                .isEqualTo("crashed-owner");
+
+        List<OutboxPublisher.PublishResult> results =
+                outboxPublisher.publishPending();
+
+        assertThat(results)
+                .singleElement()
+                .satisfies(result -> assertThat(result.outcome())
+                        .isEqualTo(OutboxPublisher.Outcome.SENT));
+        assertThat(outboxStatus(outbox.getId()))
+                .isEqualTo("SENT");
+        assertThat(outboxLeaseOwner(outbox.getId()))
+                .isNotEqualTo("crashed-owner");
+        waitUntil(
+                () -> queueMessageCount(
+                        RabbitMQConfig.DEVICE_ALARM_QUEUE
+                ) == 1,
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+    }
+
+    @Test
+    void expiredProcessingRecoveryKeepsConsumerIdempotency()
+            throws Exception {
+
+        startAlarmListener();
+
+        DeviceAlarmEventMessage message = message(
+                "EVT-OUTBOX-RECLAIM-E2E-" + UUID.randomUUID(),
+                LocalDateTime.of(2026, 9, 20, 10, 0)
+        );
+
+        alarmService.processEvent(toCommand(message));
+
+        OutboxEvent outbox =
+                outboxEventMapper.findBySourceAndEventId(
+                        message.getSource(),
+                        message.getEventId()
+                );
+
+        LocalDateTime expiredNow =
+                LocalDateTime.now().minusSeconds(60).withNano(0);
+
+        assertThat(outboxEventMapper.claim(
+                outbox.getId(),
+                "crashed-owner",
+                expiredNow.minusSeconds(1),
+                expiredNow
+        )).isEqualTo(1);
+
+        List<OutboxPublisher.PublishResult> results =
+                outboxPublisher.publishPending();
+
+        assertThat(results)
+                .singleElement()
+                .satisfies(result -> assertThat(result.outcome())
+                        .isEqualTo(OutboxPublisher.Outcome.SENT));
+
+        waitUntil(
+                () -> "SENT".equals(outboxStatus(outbox.getId()))
+                        && countingAlarmService.callCount() == 1
+                        && eventCount(message.getEventId()) == 1
+                        && alarmCount() == 1
+                        && alarmOccurrenceCount() == 1
+                        && queueMessageCount(
+                                RabbitMQConfig.DEVICE_ALARM_QUEUE
+                        ) == 0,
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+    }
+
+    @Test
     void outboxPublisherCompletesAlarmChainWithoutDuplicateAggregation()
             throws Exception {
 

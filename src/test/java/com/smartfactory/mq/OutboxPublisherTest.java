@@ -40,11 +40,15 @@ class OutboxPublisherTest {
 
         OutboxEvent outbox = outbox(10002L);
 
-        when(outboxEventMapper.findPending(100))
+        when(outboxEventMapper.findClaimable(
+                eq(100),
+                any(LocalDateTime.class)
+        ))
                 .thenReturn(List.of(outbox));
         when(outboxEventMapper.claim(
                 eq(10002L),
                 anyString(),
+                any(LocalDateTime.class),
                 any(LocalDateTime.class)
         )).thenReturn(0);
 
@@ -69,11 +73,15 @@ class OutboxPublisherTest {
         AtomicReference<String> correlationId =
                 new AtomicReference<>();
 
-        when(outboxEventMapper.findPending(100))
+        when(outboxEventMapper.findClaimable(
+                eq(100),
+                any(LocalDateTime.class)
+        ))
                 .thenReturn(List.of(outbox));
         when(outboxEventMapper.claim(
                 eq(10001L),
                 anyString(),
+                any(LocalDateTime.class),
                 any(LocalDateTime.class)
         )).thenReturn(1);
         when(outboxEventMapper.markPublishFailure(

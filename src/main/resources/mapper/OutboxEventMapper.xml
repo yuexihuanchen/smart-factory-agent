@@ -122,6 +122,22 @@
 
     </select>
 
+    <select id="findClaimable"
+            resultMap="OutboxEventResultMap">
+
+        SELECT
+        <include refid="OutboxEventColumns"/>
+        FROM outbox_event
+        WHERE status = 'PENDING'
+           OR (
+               status = 'PROCESSING'
+               AND lease_until &lt;= #{now}
+           )
+        ORDER BY created_at ASC
+        LIMIT #{limit}
+
+    </select>
+
     <update id="markSent">
 
         UPDATE outbox_event
@@ -155,7 +171,13 @@
             lease_owner = #{leaseOwner},
             lease_until = #{leaseUntil}
         WHERE id = #{id}
-          AND status = 'PENDING'
+          AND (
+              status = 'PENDING'
+              OR (
+                  status = 'PROCESSING'
+                  AND lease_until &lt;= #{now}
+              )
+          )
 
     </update>
 

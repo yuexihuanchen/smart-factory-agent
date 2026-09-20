@@ -272,11 +272,13 @@ class AlarmV34OutboxMySqlIntegrationTest {
                 LocalDateTime.now()
                         .plusSeconds(30)
                         .withNano(123_000_000);
+        LocalDateTime now = leaseUntil.minusSeconds(30);
 
         assertThat(outboxEventMapper.claim(
                 outbox.getId(),
                 "owner-A",
-                leaseUntil
+                leaseUntil,
+                now
         )).isEqualTo(1);
 
         assertThat(value(
@@ -357,6 +359,150 @@ class AlarmV34OutboxMySqlIntegrationTest {
     }
 
     @Test
+    void unexpiredProcessingCannotBeReclaimed() {
+
+        AlarmEventCommand request = request(
+                "gateway-A",
+                "EVT-V343-LEASE-ACTIVE-001",
+                LocalDateTime.of(2026, 9, 20, 10, 0)
+        );
+        OutboxEvent outbox = outboxEvent(request);
+        assertThat(outboxEventMapper.insert(outbox)).isEqualTo(1);
+
+        LocalDateTime now =
+                LocalDateTime.now().withNano(456_000_000);
+
+        assertThat(outboxEventMapper.claim(
+                outbox.getId(),
+                "owner-A",
+                now.plusSeconds(30),
+                now
+        )).isEqualTo(1);
+        assertThat(outboxEventMapper.claim(
+                outbox.getId(),
+                "owner-B",
+                now.plusSeconds(30),
+                now
+        )).isZero();
+
+        assertThat(value(
+                """
+                SELECT status
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo("PROCESSING");
+        assertThat(value(
+                """
+                SELECT lease_owner
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo("owner-A");
+    }
+
+    @Test
+    void expiredProcessingCanBeReclaimed() {
+
+        AlarmEventCommand request = request(
+                "gateway-A",
+                "EVT-V343-LEASE-EXPIRED-001",
+                LocalDateTime.of(2026, 9, 20, 10, 0)
+        );
+        OutboxEvent outbox = outboxEvent(request);
+        assertThat(outboxEventMapper.insert(outbox)).isEqualTo(1);
+
+        LocalDateTime now =
+                LocalDateTime.now().withNano(789_000_000);
+
+        assertThat(outboxEventMapper.claim(
+                outbox.getId(),
+                "owner-A",
+                now.minusSeconds(1),
+                now.minusSeconds(5)
+        )).isEqualTo(1);
+        assertThat(outboxEventMapper.claim(
+                outbox.getId(),
+                "owner-B",
+                now.plusSeconds(30),
+                now
+        )).isEqualTo(1);
+
+        assertThat(value(
+                """
+                SELECT status
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo("PROCESSING");
+        assertThat(value(
+                """
+                SELECT lease_owner
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo("owner-B");
+    }
+
+    @Test
+    void concurrentExpiredLeaseReclaimsHaveExactlyOneWinner()
+            throws Exception {
+
+        AlarmEventCommand request = request(
+                "gateway-A",
+                "EVT-V343-RECLAIM-RACE-001",
+                LocalDateTime.of(2026, 9, 20, 10, 0)
+        );
+        OutboxEvent outbox = outboxEvent(request);
+        assertThat(outboxEventMapper.insert(outbox)).isEqualTo(1);
+
+        LocalDateTime now =
+                LocalDateTime.now().withNano(321_000_000);
+
+        assertThat(outboxEventMapper.claim(
+                outbox.getId(),
+                "owner-A",
+                now.minusSeconds(1),
+                now.minusSeconds(5)
+        )).isEqualTo(1);
+
+        List<ClaimAttempt> attempts = claimConcurrently(
+                outbox.getId(),
+                now,
+                "owner-B",
+                "owner-C"
+        );
+
+        assertThat(attempts)
+                .extracting(ClaimAttempt::rows)
+                .containsExactlyInAnyOrder(1, 0);
+
+        String winner = attempts.stream()
+                .filter(attempt -> attempt.rows() == 1)
+                .findFirst()
+                .orElseThrow()
+                .owner();
+
+        assertThat(value(
+                """
+                SELECT lease_owner
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo(winner);
+    }
+
+    @Test
     void oldLeaseOwnerCannotUpdateReclaimedRecord() {
 
         AlarmEventCommand request = request(
@@ -367,23 +513,22 @@ class AlarmV34OutboxMySqlIntegrationTest {
         OutboxEvent outbox = outboxEvent(request);
         assertThat(outboxEventMapper.insert(outbox)).isEqualTo(1);
 
+        LocalDateTime now =
+                LocalDateTime.now().withNano(654_000_000);
+
         assertThat(outboxEventMapper.claim(
                 outbox.getId(),
                 "owner-A",
-                LocalDateTime.now().plusSeconds(30)
+                now.minusSeconds(1),
+                now.minusSeconds(5)
         )).isEqualTo(1);
 
-        jdbcTemplate.update(
-                """
-                UPDATE outbox_event
-                SET lease_owner = 'owner-B',
-                    lease_until = ?
-                WHERE id = ?
-                  AND status = 'PROCESSING'
-                """,
-                LocalDateTime.now().plusSeconds(30),
-                outbox.getId()
-        );
+        assertThat(outboxEventMapper.claim(
+                outbox.getId(),
+                "owner-B",
+                now.plusSeconds(30),
+                now
+        )).isEqualTo(1);
 
         assertThat(outboxEventMapper.markSent(
                 outbox.getId(),
@@ -683,6 +828,20 @@ class AlarmV34OutboxMySqlIntegrationTest {
             String firstOwner,
             String secondOwner) throws Exception {
 
+        return claimConcurrently(
+                outboxId,
+                LocalDateTime.now(),
+                firstOwner,
+                secondOwner
+        );
+    }
+
+    private List<ClaimAttempt> claimConcurrently(
+            Long outboxId,
+            LocalDateTime now,
+            String firstOwner,
+            String secondOwner) throws Exception {
+
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
 
@@ -695,7 +854,8 @@ class AlarmV34OutboxMySqlIntegrationTest {
                     int rows = outboxEventMapper.claim(
                             outboxId,
                             owner,
-                            LocalDateTime.now().plusSeconds(30)
+                            now.plusSeconds(30),
+                            now
                     );
                     return new ClaimAttempt(owner, rows);
                 }));

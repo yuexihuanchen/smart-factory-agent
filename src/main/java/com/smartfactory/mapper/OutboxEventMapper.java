@@ -16,6 +16,11 @@ public interface OutboxEventMapper {
             @Param("limit") int limit
     );
 
+    List<OutboxEvent> findClaimable(
+            @Param("limit") int limit,
+            @Param("now") LocalDateTime now
+    );
+
     OutboxEvent findBySourceAndEventId(
             @Param("source") String source,
             @Param("eventId") String eventId
@@ -36,6 +41,7 @@ public interface OutboxEventMapper {
     int claim(
             @Param("id") Long id,
             @Param("leaseOwner") String leaseOwner,
-            @Param("leaseUntil") LocalDateTime leaseUntil
+            @Param("leaseUntil") LocalDateTime leaseUntil,
+            @Param("now") LocalDateTime now
     );
 }

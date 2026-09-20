@@ -47,13 +47,17 @@ public class OutboxPublisher {
     )
     public List<PublishResult> publishPending() {
 
+        LocalDateTime now = LocalDateTime.now();
         List<OutboxEvent> events =
-                outboxEventMapper.findPending(Math.max(1, batchSize));
+                outboxEventMapper.findClaimable(
+                        Math.max(1, batchSize),
+                        now
+                );
         List<PublishResult> results =
                 new ArrayList<>(events.size());
 
         for (OutboxEvent event : events) {
-            if (!tryClaim(event)) {
+            if (!tryClaim(event, now)) {
                 log.debug(
                         "Outbox 已被其他实例认领，跳过: outboxId={}, source={}, eventId={}, leaseOwner={}",
                         event.getId(),
@@ -70,16 +74,19 @@ public class OutboxPublisher {
         return results;
     }
 
-    private boolean tryClaim(OutboxEvent event) {
+    private boolean tryClaim(
+            OutboxEvent event,
+            LocalDateTime now) {
 
-        LocalDateTime leaseUntil = LocalDateTime.now().plusNanos(
+        LocalDateTime leaseUntil = now.plusNanos(
                 Math.max(1L, leaseDurationMs) * 1_000_000L
         );
 
         return outboxEventMapper.claim(
                 event.getId(),
                 leaseOwner,
-                leaseUntil
+                leaseUntil,
+                now
         ) == 1;
     }
 
