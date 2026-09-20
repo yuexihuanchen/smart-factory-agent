@@ -102,4 +102,39 @@
 
     </select>
 
+    <select id="findPending"
+            resultMap="OutboxEventResultMap">
+
+        SELECT
+        <include refid="OutboxEventColumns"/>
+        FROM outbox_event
+        WHERE status = 'PENDING'
+        ORDER BY created_at ASC
+        LIMIT #{limit}
+
+    </select>
+
+    <update id="markSent">
+
+        UPDATE outbox_event
+        SET
+            status = 'SENT',
+            published_at = #{publishedAt},
+            last_error = NULL
+        WHERE id = #{id}
+          AND status = 'PENDING'
+
+    </update>
+
+    <update id="markPublishFailure">
+
+        UPDATE outbox_event
+        SET
+            retry_count = retry_count + 1,
+            last_error = #{lastError}
+        WHERE id = #{id}
+          AND status = 'PENDING'
+
+    </update>
+
 </mapper>

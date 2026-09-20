@@ -10,6 +10,7 @@ import com.smartfactory.config.RabbitMQConfig;
 import com.smartfactory.config.RabbitMQMessageConfig;
 import com.smartfactory.config.RabbitMQPublisherConfig;
 import com.smartfactory.entity.Alarm;
+import com.smartfactory.entity.OutboxEvent;
 import com.smartfactory.enums.AlarmEventStatus;
 import com.smartfactory.mapper.AlarmEventMapper;
 import com.smartfactory.mapper.AlarmMapper;
@@ -20,6 +21,7 @@ import com.smartfactory.mq.DeviceAlarmEventConsumer;
 import com.smartfactory.mq.DeviceAlarmCorrelationData;
 import com.smartfactory.mq.DeviceAlarmEventMessage;
 import com.smartfactory.mq.DeviceAlarmEventProducer;
+import com.smartfactory.mq.OutboxPublisher;
 import com.smartfactory.service.AlarmService;
 import com.smartfactory.service.command.AlarmEventCommand;
 import com.smartfactory.service.impl.AlarmServiceImpl;
@@ -39,10 +41,12 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageListenerContainer;
+import org.springframework.amqp.core.MessagePostProcessor;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.core.ReturnedMessage;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
@@ -91,6 +95,10 @@ import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 
 @SpringJUnitConfig(AlarmV3RabbitMqIntegrationTest.TestConfiguration.class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -168,6 +176,19 @@ class AlarmV3RabbitMqIntegrationTest {
 
     @Autowired
     private DeviceAlarmEventProducer producer;
+
+    @Autowired
+    @Qualifier("alarmService")
+    private AlarmService alarmService;
+
+    @Autowired
+    private OutboxPublisher outboxPublisher;
+
+    @Autowired
+    private OutboxEventMapper outboxEventMapper;
+
+    @Autowired
+    private JsonMapper jsonMapper;
 
     @Autowired
     private CountingAlarmService countingAlarmService;
@@ -436,6 +457,248 @@ class AlarmV3RabbitMqIntegrationTest {
         assertThat(correlationData.getRoutingKey())
                 .isEqualTo(RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY);
         assertThat(correlationData.getReturned()).isNull();
+    }
+
+    @Test
+    void outboxPublisherMarksSentAfterRealBrokerConfirm()
+            throws Exception {
+
+        stopAlarmListener();
+        resetQueue();
+
+        DeviceAlarmEventMessage message = message(
+                "EVT-OUTBOX-ACK-" + UUID.randomUUID(),
+                LocalDateTime.of(2026, 9, 16, 10, 0)
+        );
+        OutboxEvent outbox = insertPendingOutbox(
+                message,
+                RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY
+        );
+
+        List<OutboxPublisher.PublishResult> results =
+                outboxPublisher.publishPending();
+
+        assertThat(results)
+                .singleElement()
+                .satisfies(result -> {
+                    assertThat(result.outboxId())
+                            .isEqualTo(outbox.getId());
+                    assertThat(result.outcome())
+                            .isEqualTo(
+                                    OutboxPublisher.Outcome.SENT
+                            );
+                    assertThat(result.confirmed()).isTrue();
+                    assertThat(result.returned()).isFalse();
+                });
+
+        waitUntil(
+                () -> "SENT".equals(outboxStatus(outbox.getId())),
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+        waitUntil(
+                () -> queueMessageCount(
+                        RabbitMQConfig.DEVICE_ALARM_QUEUE
+                ) == 1,
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
+
+        assertThat(outboxPublishedAt(outbox.getId()))
+                .isNotNull();
+        assertThat(outboxLastError(outbox.getId())).isNull();
+        assertThat(outboxRetryCount(outbox.getId())).isZero();
+    }
+
+    @Test
+    void outboxPublisherKeepsReturnedMessagePending()
+            throws Exception {
+
+        stopAlarmListener();
+        resetQueue();
+
+        DeviceAlarmEventMessage message = message(
+                "EVT-OUTBOX-RETURN-" + UUID.randomUUID(),
+                LocalDateTime.of(2026, 9, 16, 10, 0)
+        );
+        OutboxEvent outbox = insertPendingOutbox(
+                message,
+                "device.alarm.invalid"
+        );
+
+        List<OutboxPublisher.PublishResult> results =
+                outboxPublisher.publishPending();
+
+        assertThat(results)
+                .singleElement()
+                .satisfies(result -> {
+                    assertThat(result.outboxId())
+                            .isEqualTo(outbox.getId());
+                    assertThat(result.outcome())
+                            .isEqualTo(
+                                    OutboxPublisher.Outcome.RETURNED
+                            );
+                    assertThat(result.confirmed()).isTrue();
+                    assertThat(result.returned()).isTrue();
+                    assertThat(result.replyCode()).isEqualTo(312);
+                    assertThat(result.replyText())
+                            .isEqualTo("NO_ROUTE");
+                });
+
+        assertThat(outboxStatus(outbox.getId()))
+                .isEqualTo("PENDING");
+        assertThat(outboxRetryCount(outbox.getId())).isEqualTo(1);
+        assertThat(outboxLastError(outbox.getId()))
+                .contains("NO_ROUTE", "312");
+        assertThat(queueMessageCount(
+                RabbitMQConfig.DEVICE_ALARM_QUEUE
+        )).isZero();
+        assertThat(queueMessageCount(
+                RabbitMQConfig.DEVICE_ALARM_DLQ
+        )).isZero();
+    }
+
+    @Test
+    void outboxPublisherKeepsPendingWhenPublishThrows()
+            throws Exception {
+
+        RabbitTemplate brokenRabbitTemplate =
+                mock(RabbitTemplate.class);
+
+        doThrow(new RuntimeException("simulated publish failure"))
+                .when(brokenRabbitTemplate)
+                .convertAndSend(
+                        anyString(),
+                        anyString(),
+                        any(DeviceAlarmEventMessage.class),
+                        any(MessagePostProcessor.class),
+                        any(CorrelationData.class)
+                );
+
+        OutboxPublisher brokenPublisher = new OutboxPublisher(
+                outboxEventMapper,
+                brokenRabbitTemplate,
+                jsonMapper
+        );
+
+        DeviceAlarmEventMessage message = message(
+                "EVT-OUTBOX-EXCEPTION-" + UUID.randomUUID(),
+                LocalDateTime.of(2026, 9, 16, 10, 0)
+        );
+        OutboxEvent outbox = insertPendingOutbox(
+                message,
+                RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY
+        );
+
+        List<OutboxPublisher.PublishResult> results =
+                brokenPublisher.publishPending();
+
+        assertThat(results)
+                .singleElement()
+                .satisfies(result -> {
+                    assertThat(result.outboxId())
+                            .isEqualTo(outbox.getId());
+                    assertThat(result.outcome())
+                            .isEqualTo(
+                                    OutboxPublisher.Outcome
+                                            .PUBLISH_FAILED
+                            );
+                });
+
+        assertThat(outboxStatus(outbox.getId()))
+                .isEqualTo("PENDING");
+        assertThat(outboxRetryCount(outbox.getId())).isEqualTo(1);
+        assertThat(outboxLastError(outbox.getId()))
+                .contains("simulated publish failure");
+        assertThat(outboxPublishedAt(outbox.getId())).isNull();
+    }
+
+    @Test
+    void outboxPublisherUpdatesEachCorrelatedRecord()
+            throws Exception {
+
+        stopAlarmListener();
+        resetQueue();
+
+        OutboxEvent first = insertPendingOutbox(
+                message(
+                        "EVT-OUTBOX-MULTI-A-" + UUID.randomUUID(),
+                        LocalDateTime.of(2026, 9, 16, 10, 0)
+                ),
+                RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY
+        );
+        OutboxEvent second = insertPendingOutbox(
+                message(
+                        "EVT-OUTBOX-MULTI-B-" + UUID.randomUUID(),
+                        LocalDateTime.of(2026, 9, 16, 10, 1)
+                ),
+                RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY
+        );
+
+        List<OutboxPublisher.PublishResult> results =
+                outboxPublisher.publishPending();
+
+        assertThat(results)
+                .hasSize(2)
+                .allSatisfy(result -> assertThat(result.outcome())
+                        .isEqualTo(OutboxPublisher.Outcome.SENT))
+                .extracting(OutboxPublisher.PublishResult::outboxId)
+                .containsExactlyInAnyOrder(
+                        first.getId(),
+                        second.getId()
+                );
+
+        assertThat(outboxStatus(first.getId()))
+                .isEqualTo("SENT");
+        assertThat(outboxStatus(second.getId()))
+                .isEqualTo("SENT");
+        assertThat(queueMessageCount(
+                RabbitMQConfig.DEVICE_ALARM_QUEUE
+        )).isEqualTo(2);
+    }
+
+    @Test
+    void outboxPublisherCompletesAlarmChainWithoutDuplicateAggregation()
+            throws Exception {
+
+        startAlarmListener();
+
+        DeviceAlarmEventMessage message = message(
+                "EVT-OUTBOX-E2E-" + UUID.randomUUID(),
+                LocalDateTime.of(2026, 9, 16, 10, 0)
+        );
+
+        alarmService.processEvent(toCommand(message));
+
+        OutboxEvent outbox =
+                outboxEventMapper.findBySourceAndEventId(
+                        message.getSource(),
+                        message.getEventId()
+                );
+
+        assertThat(outbox).isNotNull();
+        assertThat(outbox.getStatus()).isEqualTo("PENDING");
+
+        List<OutboxPublisher.PublishResult> results =
+                outboxPublisher.publishPending();
+
+        assertThat(results)
+                .singleElement()
+                .satisfies(result -> assertThat(result.outcome())
+                        .isEqualTo(OutboxPublisher.Outcome.SENT));
+
+        waitUntil(
+                () -> "SENT".equals(outboxStatus(outbox.getId()))
+                        && countingAlarmService.callCount() == 1
+                        && eventCount(message.getEventId()) == 1
+                        && alarmCount() == 1
+                        && alarmOccurrenceCount() == 1
+                        && queueMessageCount(
+                                RabbitMQConfig.DEVICE_ALARM_QUEUE
+                        ) == 0,
+                WAIT_TIMEOUT,
+                this::diagnostics
+        );
     }
 
     @Test
@@ -1125,6 +1388,111 @@ class AlarmV3RabbitMqIntegrationTest {
         return count == null ? -1L : count;
     }
 
+    private OutboxEvent insertPendingOutbox(
+            DeviceAlarmEventMessage message,
+            String routingKey) {
+
+        OutboxEvent outbox = new OutboxEvent();
+
+        outbox.setSource(message.getSource());
+        outbox.setEventId(message.getEventId());
+        outbox.setExchange(RabbitMQConfig.DEVICE_EXCHANGE);
+        outbox.setRoutingKey(routingKey);
+        outbox.setPayload(
+                jsonMapper.writeValueAsString(message)
+        );
+        outbox.setStatus("PENDING");
+        outbox.setRetryCount(0);
+
+        assertThat(outboxEventMapper.insert(outbox))
+                .isEqualTo(1);
+
+        return outbox;
+    }
+
+    private AlarmEventCommand toCommand(
+            DeviceAlarmEventMessage message) {
+
+        AlarmEventCommand command = new AlarmEventCommand();
+
+        command.setSource(message.getSource());
+        command.setEventId(message.getEventId());
+        command.setDeviceId(message.getDeviceId());
+        command.setAlarmCode(message.getAlarmCode());
+        command.setAlarmType(message.getAlarmType());
+        command.setAlarmLevel(message.getAlarmLevel());
+        command.setTitle(message.getTitle());
+        command.setMessage(message.getMessage());
+        command.setOccurredAt(message.getOccurredAt());
+        command.setPayload(message.getPayload());
+
+        return command;
+    }
+
+    private String outboxStatus(Long outboxId) {
+
+        return value(
+                """
+                SELECT status
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outboxId
+        );
+    }
+
+    private Integer outboxRetryCount(Long outboxId) {
+
+        return value(
+                """
+                SELECT retry_count
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                Integer.class,
+                outboxId
+        );
+    }
+
+    private Timestamp outboxPublishedAt(Long outboxId) {
+
+        return value(
+                """
+                SELECT published_at
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                Timestamp.class,
+                outboxId
+        );
+    }
+
+    private String outboxLastError(Long outboxId) {
+
+        return value(
+                """
+                SELECT last_error
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outboxId
+        );
+    }
+
+    private <T> T value(
+            String sql,
+            Class<T> type,
+            Object... arguments) {
+
+        return jdbcTemplate.queryForObject(
+                sql,
+                type,
+                arguments
+        );
+    }
+
     private Throwable rootCause(Throwable throwable) {
 
         Throwable current = throwable;
@@ -1641,6 +2009,19 @@ class AlarmV3RabbitMqIntegrationTest {
         @Bean
         JsonMapper jsonMapper() {
             return JsonMapper.builder().build();
+        }
+
+        @Bean
+        OutboxPublisher outboxPublisher(
+                OutboxEventMapper outboxEventMapper,
+                RabbitTemplate rabbitTemplate,
+                JsonMapper jsonMapper) {
+
+            return new OutboxPublisher(
+                    outboxEventMapper,
+                    rabbitTemplate,
+                    jsonMapper
+            );
         }
 
         @Bean
