@@ -42,6 +42,12 @@
         <result property="lastError"
                 column="last_error"/>
 
+        <result property="leaseOwner"
+                column="lease_owner"/>
+
+        <result property="leaseUntil"
+                column="lease_until"/>
+
     </resultMap>
 
     <sql id="OutboxEventColumns">
@@ -55,7 +61,9 @@
         retry_count,
         created_at,
         published_at,
-        last_error
+        last_error,
+        lease_owner,
+        lease_until
     </sql>
 
     <insert id="insert"
@@ -122,7 +130,8 @@
             published_at = #{publishedAt},
             last_error = NULL
         WHERE id = #{id}
-          AND status = 'PENDING'
+          AND status = 'PROCESSING'
+          AND lease_owner = #{leaseOwner}
 
     </update>
 
@@ -132,6 +141,19 @@
         SET
             retry_count = retry_count + 1,
             last_error = #{lastError}
+        WHERE id = #{id}
+          AND status = 'PROCESSING'
+          AND lease_owner = #{leaseOwner}
+
+    </update>
+
+    <update id="claim">
+
+        UPDATE outbox_event
+        SET
+            status = 'PROCESSING',
+            lease_owner = #{leaseOwner},
+            lease_until = #{leaseUntil}
         WHERE id = #{id}
           AND status = 'PENDING'
 

@@ -511,7 +511,7 @@ class AlarmV3RabbitMqIntegrationTest {
     }
 
     @Test
-    void outboxPublisherKeepsReturnedMessagePending()
+    void outboxPublisherKeepsReturnedMessageProcessing()
             throws Exception {
 
         stopAlarmListener();
@@ -546,7 +546,9 @@ class AlarmV3RabbitMqIntegrationTest {
                 });
 
         assertThat(outboxStatus(outbox.getId()))
-                .isEqualTo("PENDING");
+                .isEqualTo("PROCESSING");
+        assertThat(outboxLeaseOwner(outbox.getId()))
+                .isNotBlank();
         assertThat(outboxRetryCount(outbox.getId())).isEqualTo(1);
         assertThat(outboxLastError(outbox.getId()))
                 .contains("NO_ROUTE", "312");
@@ -559,7 +561,7 @@ class AlarmV3RabbitMqIntegrationTest {
     }
 
     @Test
-    void outboxPublisherKeepsPendingWhenPublishThrows()
+    void outboxPublisherKeepsProcessingWhenPublishThrows()
             throws Exception {
 
         RabbitTemplate brokenRabbitTemplate =
@@ -606,7 +608,9 @@ class AlarmV3RabbitMqIntegrationTest {
                 });
 
         assertThat(outboxStatus(outbox.getId()))
-                .isEqualTo("PENDING");
+                .isEqualTo("PROCESSING");
+        assertThat(outboxLeaseOwner(outbox.getId()))
+                .isNotBlank();
         assertThat(outboxRetryCount(outbox.getId())).isEqualTo(1);
         assertThat(outboxLastError(outbox.getId()))
                 .contains("simulated publish failure");
@@ -1473,6 +1477,19 @@ class AlarmV3RabbitMqIntegrationTest {
         return value(
                 """
                 SELECT last_error
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outboxId
+        );
+    }
+
+    private String outboxLeaseOwner(Long outboxId) {
+
+        return value(
+                """
+                SELECT lease_owner
                 FROM outbox_event
                 WHERE id = ?
                 """,

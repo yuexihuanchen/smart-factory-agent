@@ -55,6 +55,7 @@ smart-factory:
       poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:1000}
       batch-size: ${OUTBOX_BATCH_SIZE:100}
       confirm-timeout-ms: ${OUTBOX_CONFIRM_TIMEOUT_MS:5000}
+      lease-duration-ms: ${OUTBOX_LEASE_DURATION_MS:30000}
 
   jwt:
     secret: ${SMART_FACTORY_JWT_SECRET}

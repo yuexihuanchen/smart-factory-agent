@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS outbox_event (
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     published_at DATETIME(3) DEFAULT NULL,
     last_error TEXT DEFAULT NULL,
+    lease_owner VARCHAR(64) DEFAULT NULL,
+    lease_until DATETIME(3) DEFAULT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uk_outbox_event_source_event (
         source,
@@ -25,8 +27,12 @@ CREATE TABLE IF NOT EXISTS outbox_event (
         status,
         created_at
     ),
+    KEY idx_outbox_event_status_lease (
+        status,
+        lease_until
+    ),
     CONSTRAINT chk_outbox_event_status
-        CHECK (status IN ('PENDING', 'SENT'))
+        CHECK (status IN ('PENDING', 'PROCESSING', 'SENT'))
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci

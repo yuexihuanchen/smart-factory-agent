@@ -23,11 +23,19 @@ public interface OutboxEventMapper {
 
     int markSent(
             @Param("id") Long id,
+            @Param("leaseOwner") String leaseOwner,
             @Param("publishedAt") LocalDateTime publishedAt
     );
 
     int markPublishFailure(
             @Param("id") Long id,
+            @Param("leaseOwner") String leaseOwner,
             @Param("lastError") String lastError
+    );
+
+    int claim(
+            @Param("id") Long id,
+            @Param("leaseOwner") String leaseOwner,
+            @Param("leaseUntil") LocalDateTime leaseUntil
     );
 }

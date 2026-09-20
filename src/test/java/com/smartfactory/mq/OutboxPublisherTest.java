@@ -21,6 +21,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class OutboxPublisherTest {
@@ -35,7 +36,34 @@ class OutboxPublisherTest {
             JsonMapper.builder().build();
 
     @Test
-    void nackKeepsPendingAndUsesOutboxIdAsCorrelationId() {
+    void claimFailureSkipsPublishAndFailureUpdate() {
+
+        OutboxEvent outbox = outbox(10002L);
+
+        when(outboxEventMapper.findPending(100))
+                .thenReturn(List.of(outbox));
+        when(outboxEventMapper.claim(
+                eq(10002L),
+                anyString(),
+                any(LocalDateTime.class)
+        )).thenReturn(0);
+
+        OutboxPublisher publisher = new OutboxPublisher(
+                outboxEventMapper,
+                rabbitTemplate,
+                jsonMapper
+        );
+
+        assertThat(publisher.publishPending()).isEmpty();
+        verifyNoInteractions(rabbitTemplate);
+        verify(outboxEventMapper, never())
+                .markSent(any(), anyString(), any());
+        verify(outboxEventMapper, never())
+                .markPublishFailure(any(), anyString(), anyString());
+    }
+
+    @Test
+    void nackKeepsProcessingAndUsesOutboxIdAsCorrelationId() {
 
         OutboxEvent outbox = outbox(10001L);
         AtomicReference<String> correlationId =
@@ -43,8 +71,14 @@ class OutboxPublisherTest {
 
         when(outboxEventMapper.findPending(100))
                 .thenReturn(List.of(outbox));
+        when(outboxEventMapper.claim(
+                eq(10001L),
+                anyString(),
+                any(LocalDateTime.class)
+        )).thenReturn(1);
         when(outboxEventMapper.markPublishFailure(
                 eq(10001L),
+                anyString(),
                 anyString()
         )).thenReturn(1);
 
@@ -91,10 +125,11 @@ class OutboxPublisherTest {
                 });
         verify(outboxEventMapper).markPublishFailure(
                 eq(10001L),
+                anyString(),
                 contains("broker rejected")
         );
         verify(outboxEventMapper, never())
-                .markSent(any(), any());
+                .markSent(any(), any(), any());
     }
 
     private OutboxEvent outbox(Long id) {

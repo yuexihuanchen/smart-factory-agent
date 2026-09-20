@@ -16,6 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -35,6 +36,11 @@ public class OutboxPublisher {
     @Value("${smart-factory.rabbitmq.outbox.confirm-timeout-ms:5000}")
     private long confirmTimeoutMs = 5000;
 
+    @Value("${smart-factory.rabbitmq.outbox.lease-duration-ms:30000}")
+    private long leaseDurationMs = 30000;
+
+    private final String leaseOwner = UUID.randomUUID().toString();
+
     @Scheduled(
             fixedDelayString =
                     "${smart-factory.rabbitmq.outbox.poll-interval-ms:1000}"
@@ -47,10 +53,34 @@ public class OutboxPublisher {
                 new ArrayList<>(events.size());
 
         for (OutboxEvent event : events) {
+            if (!tryClaim(event)) {
+                log.debug(
+                        "Outbox 已被其他实例认领，跳过: outboxId={}, source={}, eventId={}, leaseOwner={}",
+                        event.getId(),
+                        event.getSource(),
+                        event.getEventId(),
+                        leaseOwner
+                );
+                continue;
+            }
+
             results.add(publishOne(event));
         }
 
         return results;
+    }
+
+    private boolean tryClaim(OutboxEvent event) {
+
+        LocalDateTime leaseUntil = LocalDateTime.now().plusNanos(
+                Math.max(1L, leaseDurationMs) * 1_000_000L
+        );
+
+        return outboxEventMapper.claim(
+                event.getId(),
+                leaseOwner,
+                leaseUntil
+        ) == 1;
     }
 
     private PublishResult publishOne(OutboxEvent event) {
@@ -184,17 +214,19 @@ public class OutboxPublisher {
 
             int updated = outboxEventMapper.markSent(
                     event.getId(),
+                    leaseOwner,
                     LocalDateTime.now()
             );
 
             if (updated != 1) {
                 log.warn(
-                        "Outbox 状态已变化，跳过 SENT 更新: outboxId={}, source={}, eventId={}, exchange={}, routingKey={}",
+                        "Outbox 状态或 Lease Owner 已变化，跳过 SENT 更新: outboxId={}, source={}, eventId={}, exchange={}, routingKey={}, leaseOwner={}",
                         event.getId(),
                         event.getSource(),
                         event.getEventId(),
                         event.getExchange(),
-                        event.getRoutingKey()
+                        event.getRoutingKey(),
+                        leaseOwner
                 );
 
                 return failureResult(
@@ -209,12 +241,13 @@ public class OutboxPublisher {
             }
 
             log.info(
-                    "Outbox 发布成功并标记 SENT: outboxId={}, source={}, eventId={}, exchange={}, routingKey={}",
+                    "Outbox 发布成功并标记 SENT: outboxId={}, source={}, eventId={}, exchange={}, routingKey={}, leaseOwner={}",
                     event.getId(),
                     event.getSource(),
                     event.getEventId(),
                     event.getExchange(),
-                    event.getRoutingKey()
+                    event.getRoutingKey(),
+                    leaseOwner
             );
 
             return new PublishResult(
@@ -280,17 +313,19 @@ public class OutboxPublisher {
 
         int updated = outboxEventMapper.markPublishFailure(
                 event.getId(),
+                leaseOwner,
                 error
         );
 
         if (updated != 1) {
             log.warn(
-                    "Outbox 状态已变化，跳过失败计数更新: outboxId={}, source={}, eventId={}, exchange={}, routingKey={}",
+                    "Outbox 状态或 Lease Owner 已变化，跳过失败计数更新: outboxId={}, source={}, eventId={}, exchange={}, routingKey={}, leaseOwner={}",
                     event.getId(),
                     event.getSource(),
                     event.getEventId(),
                     event.getExchange(),
-                    event.getRoutingKey()
+                    event.getRoutingKey(),
+                    leaseOwner
             );
         }
     }

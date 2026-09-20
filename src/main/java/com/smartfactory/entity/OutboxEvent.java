@@ -28,4 +28,8 @@ public class OutboxEvent {
     private LocalDateTime publishedAt;
 
     private String lastError;
+
+    private String leaseOwner;
+
+    private LocalDateTime leaseUntil;
 }
