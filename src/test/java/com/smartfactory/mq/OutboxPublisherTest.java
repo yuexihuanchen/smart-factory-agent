@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -63,7 +64,12 @@ class OutboxPublisherTest {
         verify(outboxEventMapper, never())
                 .markSent(any(), anyString(), any());
         verify(outboxEventMapper, never())
-                .markPublishFailure(any(), anyString(), anyString());
+                .markPublishFailure(
+                        any(),
+                        anyString(),
+                        anyString(),
+                        anyInt()
+                );
     }
 
     @Test
@@ -87,7 +93,8 @@ class OutboxPublisherTest {
         when(outboxEventMapper.markPublishFailure(
                 eq(10001L),
                 anyString(),
-                anyString()
+                anyString(),
+                eq(5)
         )).thenReturn(1);
 
         doAnswer(invocation -> {
@@ -134,7 +141,8 @@ class OutboxPublisherTest {
         verify(outboxEventMapper).markPublishFailure(
                 eq(10001L),
                 anyString(),
-                contains("broker rejected")
+                contains("broker rejected"),
+                eq(5)
         );
         verify(outboxEventMapper, never())
                 .markSent(any(), any(), any());

@@ -662,6 +662,114 @@ class AlarmV3RabbitMqIntegrationTest {
     }
 
     @Test
+    void outboxReachesFailedAfterMaxRetriesAndIsNotResent()
+            throws Exception {
+
+        stopAlarmListener();
+        resetQueue();
+
+        DeviceAlarmEventMessage message = message(
+                "EVT-OUTBOX-FAILED-" + UUID.randomUUID(),
+                LocalDateTime.of(2026, 9, 20, 10, 0)
+        );
+        OutboxEvent outbox = insertPendingOutbox(
+                message,
+                "device.alarm.invalid"
+        );
+
+        jdbcTemplate.update(
+                """
+                UPDATE outbox_event
+                SET retry_count = 4
+                WHERE id = ?
+                """,
+                outbox.getId()
+        );
+
+        List<OutboxPublisher.PublishResult> firstRun =
+                outboxPublisher.publishPending();
+
+        assertThat(firstRun)
+                .singleElement()
+                .satisfies(result -> assertThat(result.outcome())
+                        .isEqualTo(OutboxPublisher.Outcome.RETURNED));
+        assertThat(outboxStatus(outbox.getId()))
+                .isEqualTo("FAILED");
+        assertThat(outboxRetryCount(outbox.getId())).isEqualTo(5);
+        assertThat(outboxLeaseOwner(outbox.getId())).isNull();
+        assertThat(outboxLeaseUntil(outbox.getId())).isNull();
+        assertThat(outboxLastError(outbox.getId()))
+                .contains("NO_ROUTE");
+
+        assertThat(outboxPublisher.publishPending()).isEmpty();
+        assertThat(queueMessageCount(
+                RabbitMQConfig.DEVICE_ALARM_QUEUE
+        )).isZero();
+    }
+
+    @Test
+    void failedOutboxDoesNotBlockSuccessfulOutbox()
+            throws Exception {
+
+        stopAlarmListener();
+        resetQueue();
+
+        OutboxEvent failed = insertPendingOutbox(
+                message(
+                        "EVT-OUTBOX-BATCH-FAILED-" + UUID.randomUUID(),
+                        LocalDateTime.of(2026, 9, 20, 10, 0)
+                ),
+                "device.alarm.invalid"
+        );
+        OutboxEvent sent = insertPendingOutbox(
+                message(
+                        "EVT-OUTBOX-BATCH-SENT-" + UUID.randomUUID(),
+                        LocalDateTime.of(2026, 9, 20, 10, 1)
+                ),
+                RabbitMQConfig.DEVICE_ALARM_ROUTING_KEY
+        );
+
+        jdbcTemplate.update(
+                """
+                UPDATE outbox_event
+                SET retry_count = 4
+                WHERE id = ?
+                """,
+                failed.getId()
+        );
+
+        List<OutboxPublisher.PublishResult> results =
+                outboxPublisher.publishPending();
+
+        assertThat(results)
+                .hasSize(2)
+                .anySatisfy(result -> {
+                    assertThat(result.outboxId())
+                            .isEqualTo(failed.getId());
+                    assertThat(result.outcome())
+                            .isEqualTo(
+                                    OutboxPublisher.Outcome.RETURNED
+                            );
+                })
+                .anySatisfy(result -> {
+                    assertThat(result.outboxId())
+                            .isEqualTo(sent.getId());
+                    assertThat(result.outcome())
+                            .isEqualTo(
+                                    OutboxPublisher.Outcome.SENT
+                            );
+                });
+
+        assertThat(outboxStatus(failed.getId()))
+                .isEqualTo("FAILED");
+        assertThat(outboxStatus(sent.getId()))
+                .isEqualTo("SENT");
+        assertThat(queueMessageCount(
+                RabbitMQConfig.DEVICE_ALARM_QUEUE
+        )).isEqualTo(1);
+    }
+
+    @Test
     void outboxPublisherReclaimsExpiredProcessing()
             throws Exception {
 
@@ -1593,6 +1701,19 @@ class AlarmV3RabbitMqIntegrationTest {
                 WHERE id = ?
                 """,
                 String.class,
+                outboxId
+        );
+    }
+
+    private Timestamp outboxLeaseUntil(Long outboxId) {
+
+        return value(
+                """
+                SELECT lease_until
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                Timestamp.class,
                 outboxId
         );
     }

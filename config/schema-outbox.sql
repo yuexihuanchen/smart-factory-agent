@@ -32,7 +32,14 @@ CREATE TABLE IF NOT EXISTS outbox_event (
         lease_until
     ),
     CONSTRAINT chk_outbox_event_status
-        CHECK (status IN ('PENDING', 'PROCESSING', 'SENT'))
+        CHECK (
+            status IN (
+                'PENDING',
+                'PROCESSING',
+                'SENT',
+                'FAILED'
+            )
+        )
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci

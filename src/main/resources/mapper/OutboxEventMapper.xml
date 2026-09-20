@@ -153,8 +153,27 @@
 
     <update id="markPublishFailure">
 
+        <!--
+          MySQL evaluates SET assignments from left to right.
+          Evaluate the threshold before retry_count is incremented.
+        -->
         UPDATE outbox_event
         SET
+            status = CASE
+                WHEN retry_count + 1 >= #{maxRetries}
+                    THEN 'FAILED'
+                ELSE 'PROCESSING'
+            END,
+            lease_owner = CASE
+                WHEN retry_count + 1 >= #{maxRetries}
+                    THEN NULL
+                ELSE lease_owner
+            END,
+            lease_until = CASE
+                WHEN retry_count + 1 >= #{maxRetries}
+                    THEN NULL
+                ELSE lease_until
+            END,
             retry_count = retry_count + 1,
             last_error = #{lastError}
         WHERE id = #{id}

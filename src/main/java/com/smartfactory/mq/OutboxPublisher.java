@@ -39,6 +39,9 @@ public class OutboxPublisher {
     @Value("${smart-factory.rabbitmq.outbox.lease-duration-ms:30000}")
     private long leaseDurationMs = 30000;
 
+    @Value("${smart-factory.rabbitmq.outbox.max-retries:5}")
+    private int maxRetries = 5;
+
     private final String leaseOwner = UUID.randomUUID().toString();
 
     @Scheduled(
@@ -321,7 +324,8 @@ public class OutboxPublisher {
         int updated = outboxEventMapper.markPublishFailure(
                 event.getId(),
                 leaseOwner,
-                error
+                error,
+                Math.max(1, maxRetries)
         );
 
         if (updated != 1) {
@@ -333,6 +337,35 @@ public class OutboxPublisher {
                     event.getExchange(),
                     event.getRoutingKey(),
                     leaseOwner
+            );
+            return;
+        }
+
+        int currentRetryCount = event.getRetryCount() == null
+                ? 1
+                : event.getRetryCount() + 1;
+
+        if (currentRetryCount >= Math.max(1, maxRetries)) {
+            log.error(
+                    "Outbox 达到最大失败次数并进入 FAILED: outboxId={}, source={}, eventId={}, exchange={}, routingKey={}, retryCount={}, maxRetries={}",
+                    event.getId(),
+                    event.getSource(),
+                    event.getEventId(),
+                    event.getExchange(),
+                    event.getRoutingKey(),
+                    currentRetryCount,
+                    maxRetries
+            );
+        } else {
+            log.warn(
+                    "Outbox 发布失败，任务保持 PROCESSING: outboxId={}, source={}, eventId={}, exchange={}, routingKey={}, retryCount={}, maxRetries={}",
+                    event.getId(),
+                    event.getSource(),
+                    event.getEventId(),
+                    event.getExchange(),
+                    event.getRoutingKey(),
+                    currentRetryCount,
+                    maxRetries
             );
         }
     }

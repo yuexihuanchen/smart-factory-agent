@@ -35,7 +35,8 @@ public interface OutboxEventMapper {
     int markPublishFailure(
             @Param("id") Long id,
             @Param("leaseOwner") String leaseOwner,
-            @Param("lastError") String lastError
+            @Param("lastError") String lastError,
+            @Param("maxRetries") int maxRetries
     );
 
     int claim(

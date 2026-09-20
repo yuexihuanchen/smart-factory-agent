@@ -538,7 +538,8 @@ class AlarmV34OutboxMySqlIntegrationTest {
         assertThat(outboxEventMapper.markPublishFailure(
                 outbox.getId(),
                 "owner-A",
-                "stale owner failure"
+                "stale owner failure",
+                5
         )).isZero();
 
         assertThat(value(
@@ -574,6 +575,202 @@ class AlarmV34OutboxMySqlIntegrationTest {
                 "owner-B",
                 LocalDateTime.now()
         )).isEqualTo(1);
+    }
+
+    @Test
+    void firstFailureKeepsProcessing() {
+
+        OutboxEvent outbox = claimedOutbox(
+                "EVT-V3433-FAIL-001",
+                0,
+                "owner-A"
+        );
+
+        assertThat(outboxEventMapper.markPublishFailure(
+                outbox.getId(),
+                "owner-A",
+                "first failure",
+                5
+        )).isEqualTo(1);
+
+        assertThat(value(
+                """
+                SELECT retry_count
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                Integer.class,
+                outbox.getId()
+        )).isEqualTo(1);
+        assertThat(value(
+                """
+                SELECT status
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo("PROCESSING");
+    }
+
+    @Test
+    void fourthFailureKeepsProcessing() {
+
+        OutboxEvent outbox = claimedOutbox(
+                "EVT-V3433-FAIL-004",
+                3,
+                "owner-A"
+        );
+
+        assertThat(outboxEventMapper.markPublishFailure(
+                outbox.getId(),
+                "owner-A",
+                "fourth failure",
+                5
+        )).isEqualTo(1);
+
+        assertThat(value(
+                """
+                SELECT retry_count
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                Integer.class,
+                outbox.getId()
+        )).isEqualTo(4);
+        assertThat(value(
+                """
+                SELECT status
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo("PROCESSING");
+    }
+
+    @Test
+    void fifthFailureMovesToFailedAndClearsLease() {
+
+        OutboxEvent outbox = claimedOutbox(
+                "EVT-V3433-FAIL-005",
+                4,
+                "owner-A"
+        );
+
+        assertThat(outboxEventMapper.markPublishFailure(
+                outbox.getId(),
+                "owner-A",
+                "fifth failure",
+                5
+        )).isEqualTo(1);
+
+        assertThat(value(
+                """
+                SELECT retry_count
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                Integer.class,
+                outbox.getId()
+        )).isEqualTo(5);
+        assertThat(value(
+                """
+                SELECT status
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo("FAILED");
+        assertThat(value(
+                """
+                SELECT lease_owner
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isNull();
+        assertThat(value(
+                """
+                SELECT lease_until
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                LocalDateTime.class,
+                outbox.getId()
+        )).isNull();
+
+        assertThat(outboxEventMapper.findClaimable(
+                100,
+                LocalDateTime.now().plusDays(1)
+        )).extracting(OutboxEvent::getId)
+                .doesNotContain(outbox.getId());
+        assertThat(outboxEventMapper.markSent(
+                outbox.getId(),
+                "owner-A",
+                LocalDateTime.now()
+        )).isZero();
+        assertThat(outboxEventMapper.markPublishFailure(
+                outbox.getId(),
+                "owner-A",
+                "after failed",
+                5
+        )).isZero();
+    }
+
+    @Test
+    void nonOwnerFailureDoesNotIncrementRetryCount()
+            throws Exception {
+
+        OutboxEvent outbox = claimedOutbox(
+                "EVT-V3433-FAIL-RACE-001",
+                3,
+                "owner-A"
+        );
+
+        List<ClaimAttempt> attempts = failureConcurrently(
+                outbox.getId(),
+                "owner-A",
+                "owner-B"
+        );
+
+        assertThat(attempts)
+                .extracting(ClaimAttempt::rows)
+                .containsExactlyInAnyOrder(1, 0);
+        assertThat(attempts.stream()
+                .filter(attempt -> attempt.rows() == 1)
+                .findFirst()
+                .orElseThrow()
+                .owner()).isEqualTo("owner-A");
+        assertThat(value(
+                """
+                SELECT retry_count
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                Integer.class,
+                outbox.getId()
+        )).isEqualTo(4);
+        assertThat(value(
+                """
+                SELECT status
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo("PROCESSING");
+        assertThat(value(
+                """
+                SELECT lease_owner
+                FROM outbox_event
+                WHERE id = ?
+                """,
+                String.class,
+                outbox.getId()
+        )).isEqualTo("owner-A");
     }
 
     @Test
@@ -834,6 +1031,81 @@ class AlarmV34OutboxMySqlIntegrationTest {
                 firstOwner,
                 secondOwner
         );
+    }
+
+    private OutboxEvent claimedOutbox(
+            String eventId,
+            int retryCount,
+            String leaseOwner) {
+
+        AlarmEventCommand request = request(
+                "gateway-A",
+                eventId,
+                LocalDateTime.of(2026, 9, 20, 10, 0)
+        );
+        OutboxEvent outbox = outboxEvent(request);
+        assertThat(outboxEventMapper.insert(outbox)).isEqualTo(1);
+
+        LocalDateTime now =
+                LocalDateTime.now().withNano(111_000_000);
+
+        assertThat(outboxEventMapper.claim(
+                outbox.getId(),
+                leaseOwner,
+                now.plusSeconds(30),
+                now
+        )).isEqualTo(1);
+
+        jdbcTemplate.update(
+                """
+                UPDATE outbox_event
+                SET retry_count = ?
+                WHERE id = ?
+                """,
+                retryCount,
+                outbox.getId()
+        );
+
+        outbox.setRetryCount(retryCount);
+        return outbox;
+    }
+
+    private List<ClaimAttempt> failureConcurrently(
+            Long outboxId,
+            String firstOwner,
+            String secondOwner) throws Exception {
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try {
+            List<Future<ClaimAttempt>> futures = new ArrayList<>();
+
+            for (String owner : List.of(firstOwner, secondOwner)) {
+                futures.add(executor.submit(() -> {
+                    start.await();
+                    int rows = outboxEventMapper.markPublishFailure(
+                            outboxId,
+                            owner,
+                            "concurrent failure",
+                            5
+                    );
+                    return new ClaimAttempt(owner, rows);
+                }));
+            }
+
+            start.countDown();
+
+            List<ClaimAttempt> attempts = new ArrayList<>();
+
+            for (Future<ClaimAttempt> future : futures) {
+                attempts.add(future.get(15, TimeUnit.SECONDS));
+            }
+
+            return attempts;
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private List<ClaimAttempt> claimConcurrently(
